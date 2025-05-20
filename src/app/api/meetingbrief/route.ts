@@ -4,7 +4,7 @@
  * -----------------------------------------------------------------*/
 
 import { NextRequest, NextResponse } from "next/server";
-import { buildMeetingBriefGemini } from "@/lib/MeetingBriefGeminiPipeline";
+import { buildDealBriefGemini } from "@/lib/DealBriefGeminiPipeline";
 
 /*──────────────────────────  superscript helper  */
 
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     }
 
     // call the briefing pipeline (team will be derived from LinkedIn later)
-    const payload = await buildMeetingBriefGemini(name, organization);
+  const payload = await buildDealBriefGemini(name, organization);
 
     if (payload.brief && payload.citations?.length) {
       payload.brief = normalizeCitations(payload.brief, payload.citations);
