@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────────────────────
-   src/lib/MeetingBriefGeminiPipeline.ts
+   src/lib/DealBriefGeminiPipeline.ts
    --------------------------------------------------------------------------
    HARD CONTRACT
    ─ model returns only:
@@ -68,7 +68,7 @@
      title: string;
      snippet: string;
    }
-   export interface MeetingBriefPayload {
+   export interface DealBriefPayload {
      brief: string;
      citations: Citation[];
      tokens: number;
@@ -176,10 +176,10 @@
    };
    
    /* ── MAIN ----------------------------------------------------------------- */
-   export async function buildMeetingBriefGemini(
+   export async function buildDealBriefGemini(
      name: string,
      org: string,
-   ): Promise<MeetingBriefPayload> {
+   ): Promise<DealBriefPayload> {
      let serperCalls = 0;
      const serpResults: SerpResult[] = [];
    

@@ -188,7 +188,7 @@ export default function Page() {
     void logSearchEvent(form.name.trim(), form.organization.trim());
 
     try {
-      const res = await fetch("/api/meetingbrief", {
+      const res = await fetch("/api/dealbrief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -225,7 +225,7 @@ export default function Page() {
       <nav className="sticky top-0 z-50 backdrop-blur bg-white/80 border-b border-slate-200">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-4 py-3">
           <Link href="/" className="font-semibold text-xl">
-            MeetingBrief
+            DealBrief
           </Link>
 
           <div className="hidden md:flex gap-6 items-center">
@@ -443,7 +443,7 @@ export default function Page() {
       {/* FOOTER ------------------------------------------------------------- */}
       <footer className="bg-white border-t border-slate-200">
         <div className="max-w-6xl mx-auto px-4 py-10 flex flex-col sm:flex-row justify-between text-sm text-slate-500">
-          <p>© {new Date().getFullYear()} MeetingBrief</p>
+          <p>© {new Date().getFullYear()} DealBrief</p>
         </div>
       </footer>
     </div>
