@@ -116,7 +116,11 @@ const STEPS = [
 /* -------------------------------------------------------------------------- */
 export default function Page() {
   /* ─────────────── state */
-  const [form, setForm] = useState({ name: "", organization: "" });
+  const [form, setForm] = useState({
+    companyName: "",
+    companyDomain: "",
+    companyLeader: "",
+  });
   const [loading, setLoading] = useState(false);
   const [briefHtml, setBriefHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -159,11 +163,15 @@ export default function Page() {
   /* ---------------------------------------------------------------------- */
   /*  Analytics: insert one row per search                                   */
   /* ---------------------------------------------------------------------- */
-  const logSearchEvent = async (name: string, organization: string) => {
+  const logSearchEvent = async (
+    companyName: string,
+    companyDomain: string,
+    companyLeader: string,
+  ) => {
     try {
       await supabase
         .from("search_events")
-        .insert([{ name, organization }]);
+        .insert([{ companyName, companyDomain, companyLeader }]);
     } catch (err) {
       console.error("Supabase log error:", err);
     }
@@ -185,7 +193,11 @@ export default function Page() {
     setBriefHtml(null);
 
     // Fire-and-forget analytics
-    void logSearchEvent(form.name.trim(), form.organization.trim());
+    void logSearchEvent(
+      form.companyName.trim(),
+      form.companyDomain.trim(),
+      form.companyLeader.trim(),
+    );
 
     try {
       const res = await fetch("/api/dealbrief", {
@@ -265,30 +277,46 @@ export default function Page() {
             className="w-full max-w-xl mx-auto bg-white rounded-2xl shadow-lg p-6 flex flex-col gap-4"
           >
             <div className="flex items-center gap-2">
-              <Label htmlFor="name" className="w-20">
-                Person
+              <Label htmlFor="companyName" className="w-32">
+                Company Name
               </Label>
               <Input
-                id="name"
-                placeholder="Jensen Huang"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                id="companyName"
+                placeholder="NVIDIA"
+                value={form.companyName}
+                onChange={(e) =>
+                  setForm({ ...form, companyName: e.target.value })
+                }
                 required
               />
             </div>
 
             <div className="flex items-center gap-2">
-              <Label htmlFor="org" className="w-20">
-                Company
+              <Label htmlFor="companyDomain" className="w-32">
+                Company Domain (Website URL)
               </Label>
               <Input
-                id="org"
-                placeholder="NVIDIA"
-                value={form.organization}
+                id="companyDomain"
+                placeholder="nvidia.com"
+                value={form.companyDomain}
                 onChange={(e) =>
-                  setForm({ ...form, organization: e.target.value })
+                  setForm({ ...form, companyDomain: e.target.value })
                 }
                 required
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Label htmlFor="companyLeader" className="w-32">
+                Company Leader (CEO, Founder, Owner)
+              </Label>
+              <Input
+                id="companyLeader"
+                placeholder="Jensen Huang"
+                value={form.companyLeader}
+                onChange={(e) =>
+                  setForm({ ...form, companyLeader: e.target.value })
+                }
               />
             </div>
 
