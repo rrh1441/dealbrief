@@ -45,7 +45,7 @@ const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnon);
 /* -------------------------------------------------------------------------- */
 const sampleBriefHtmlContent = `
 <div>
-  <h2><strong>Meeting Brief: Jensen Huang – NVIDIA</strong></h2>
+  <h2><strong>Deal Brief: Jensen Huang – NVIDIA</strong></h2>
   <p>&nbsp;</p>
   <h3><strong>Executive Summary</strong></h3>
   <p>

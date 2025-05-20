@@ -161,9 +161,9 @@
      jobs: string[],
    ): string => {
      const s = "<p>&nbsp;</p>";
-     return `
-   <div>
-     <h2><strong>Meeting Brief: ${name} – ${org}</strong></h2>
+    return `
+  <div>
+    <h2><strong>Deal Brief: ${name} – ${org}</strong></h2>
    ${s}<h3><strong>Executive Summary</strong></h3>
    ${pSent(json.executive, cites)}
    ${s}<h3><strong>Job History</strong></h3>
