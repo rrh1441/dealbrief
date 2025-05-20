@@ -188,7 +188,7 @@ export default function Page() {
     void logSearchEvent(form.name.trim(), form.organization.trim());
 
     try {
-      const res = await fetch("/api/meetingbrief", {
+      const res = await fetch("/api/dealbrief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
