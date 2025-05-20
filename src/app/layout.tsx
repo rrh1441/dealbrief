@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MeetingBrief",
+  title: "DealBrief",
   description: "Instant intel for every meeting.",
 };
 
