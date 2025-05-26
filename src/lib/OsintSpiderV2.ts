@@ -52,13 +52,24 @@
    const EXEC_OUT_TOK  = 250;
    const SECT_OUT_TOK  = 120;
    
-   const TOK_CAP       = 25_000; // absolute safety
-   
    /* ── TYPES ---------------------------------------------------------------- */
    type Sev = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
    interface Bullet { text: string; source: number; sev: Sev }
    interface Section { name: string; summary: string; bullets: Bullet[] }
    interface Citation { marker: string; url: string; title: string; snippet: string }
+   
+   interface SerperOrganicResult {
+     title: string;
+     link: string;
+     snippet?: string;
+     score?: number;
+     // Add other relevant fields from the Serper API if needed
+   }
+   
+   interface SerperResponse {
+     organic?: SerperOrganicResult[];
+     // Add other fields from Serper response if necessary
+   }
    
    export interface SpiderPayload {
      company: string;
@@ -119,7 +130,6 @@
    const RE_SECRET = /\b(api[_-]?key|token|secret|password|authorization)\b/i;
    const RE_PDFXLS = /\.(pdf|xlsx)$/i;
    
-   const sevRank: Record<Sev, number> = { CRITICAL:1, HIGH:2, MEDIUM:3, LOW:4 };
    const classify = (s: string): Sev => {
      const t = s.toLowerCase();
      if (t.match(RE_SECRET)) return "CRITICAL";
@@ -128,7 +138,7 @@
      return "LOW";
    };
    
-   const scoreSerp = (r: { link:string; title:string; snippet?:string }, domain:string, canon:string): number => {
+   const scoreSerp = (r: { link:string; title:string; snippet?:string }, domain:string): number => {
      let s = 0;
      if (r.link.includes(domain)) s += 0.3;
      if ((r.snippet||"").match(RE_EMAIL) || (r.snippet||"").match(RE_PHONE)) s += 0.2;
@@ -178,9 +188,9 @@
      /* 1 ───────── SERPER BFS */
      while(queue.length && serperCalls<MAX_SERPER && performance.now()-t0<WALL_MS) {
        const q = queue.shift()!;
-       const data = await postJson<{organic?:any[]}>(
+       const data = await postJson<SerperResponse>(
          SERPER, { q, num: MAX_SERP_PAGE, gl:"us", hl:"en" }, { "X-API-KEY": SERPER_KEY! },
-       ).catch(()=>({}));
+       ).catch(()=>({} as SerperResponse));
        serperCalls++;
    
        for(const o of data.organic??[]) {
@@ -188,7 +198,7 @@
          if (!url || seenUrl.has(url)) continue;
          seenUrl.add(url);
    
-         const score = scoreSerp(o, domain, canon);
+         const score = scoreSerp(o, domain);
          top.push({ link:url, title:o.title, snippet:o.snippet, score });
    
          /* host expansion */
@@ -225,13 +235,16 @@
        if(curlCalls>=MAX_CURL) break;
        let prof = top.find(r=>r.link.includes("linkedin.com/in/") && r.title.toLowerCase().includes(owner.toLowerCase()));
        if(!prof){
-         const data = await postJson<{organic?:any[]}>(
+         const data = await postJson<SerperResponse>(
            SERPER, { q:`"${owner}" "linkedin.com/in/"`, num:5, gl:"us", hl:"en" },
            { "X-API-KEY": SERPER_KEY! },
-         ).catch(()=>({}));
+         ).catch(()=>({} as SerperResponse));
          serperCalls++;
-         prof = data.organic?.[0];
-         if(prof) top.push({ ...prof, score:0.5 });
+         const potentialProf = data.organic?.[0];
+         if (potentialProf) {
+           prof = { ...potentialProf, score: potentialProf.score ?? 0.5 };
+           top.push(prof);
+         }
        }
        if(prof){
          const res = await fetch(`${CURL_P}?linkedin_profile_url=${encodeURIComponent(prof.link)}`,
