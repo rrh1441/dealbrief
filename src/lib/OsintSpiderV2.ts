@@ -1,10 +1,10 @@
 /*  OSINT-Spider-V2  –  2025-05-27
-    -----------------------------------------------------------------------
-    Web-only due diligence
-      • Serper ≤600    • Firecrawl ≤200   • ProxyCurl ≤10
-      • GPT-4.1-mini for summaries (no hard cost cap)
+    -------------------------------------------------------------
+    Web-only due-diligence pipeline
+      • Serper ≤600  • Firecrawl ≤200  • ProxyCurl ≤10
+      • GPT-4.1-mini summaries (no budget guard)
       • 6 sections, ≤50 bullets each
-      • Strict TypeScript, zero implicit any
+      • Strict TypeScript (no implicit any)
 */
 
 import { createHash } from "node:crypto";
@@ -17,277 +17,569 @@ export const runtime = "nodejs";
 
 /*────────────────────────── ENV ──────────────────────────*/
 const {
-  SERPER_KEY, FIRECRAWL_KEY, PROXYCURL_KEY, OPENAI_API_KEY,
+  SERPER_KEY,
+  FIRECRAWL_KEY,
+  PROXYCURL_KEY,
+  OPENAI_API_KEY,
 } = process.env;
-if (!SERPER_KEY || !FIRECRAWL_KEY || !PROXYCURL_KEY || !OPENAI_API_KEY)
-  throw new Error("Missing SERPER_KEY, FIRECRAWL_KEY, PROXYCURL_KEY or OPENAI_API_KEY");
+if (!SERPER_KEY || !FIRECRAWL_KEY || !PROXYCURL_KEY || !OPENAI_API_KEY) {
+  throw new Error(
+    "Missing SERPER_KEY, FIRECRAWL_KEY, PROXYCURL_KEY or OPENAI_API_KEY",
+  );
+}
 
 /*──────────────────────── CONSTANTS ──────────────────────*/
-const SERPER  = "https://google.serper.dev/search";
-const FIRE    = "https://api.firecrawl.dev/v1/scrape";
-const CURL_P  = "https://nubela.co/proxycurl/api/v2/linkedin";
-const CURL_C  = "https://nubela.co/proxycurl/api/linkedin/company";
+const SERPER = "https://google.serper.dev/search";
+const FIRE = "https://api.firecrawl.dev/v1/scrape";
+const CURL_P = "https://nubela.co/proxycurl/api/v2/linkedin";
+const CURL_C = "https://nubela.co/proxycurl/api/linkedin/company";
 
-const MAX_SERPER   = 600;
-const MAX_SERP_PAGE= 10;
-const MAX_FIRE     = 200;
-const MAX_CURL     = 10;
-const BATCH_FIRE   = 20;
+const MAX_SERPER = 600;
+const MAX_SERP_PAGE = 10;
+const MAX_FIRE = 200;
+const MAX_CURL = 10;
+const BATCH_FIRE = 20;
 const FIRE_TIMEOUT = 6_000;
-const WALL_MS      = 12 * 60_000;
+const WALL_MS = 12 * 60_000;
 
-const MODEL        = "gpt-4.1-mini-2025-04-14";
+const MODEL = "gpt-4.1-mini-2025-04-14";
 
-const SECTIONS = ["Corporate","Legal","Cyber","Reputation","Leadership","Misc"] as const;
-type SectionName = typeof SECTIONS[number];
+const SECTIONS = [
+  "Corporate",
+  "Legal",
+  "Cyber",
+  "Reputation",
+  "Leadership",
+  "Misc",
+] as const;
+type SectionName = (typeof SECTIONS)[number];
 
-const BULLET_CAP  = 50;
-const BULLET_LEN  = 500;
-const EXEC_TOK    = 300;
-const SECT_TOK    = 160;
+const BULLET_CAP = 50;
+const BULLET_LEN = 500;
+const EXEC_TOK = 300;
+const SECT_TOK = 160;
 
 /*──────────────────────── TYPES ──────────────────────────*/
-type Sev = "CRITICAL"|"HIGH"|"MEDIUM"|"LOW";
-interface Bullet   { text:string; source:number; sev:Sev }
-interface Section  { name:SectionName; summary:string; bullets:Bullet[] }
-interface Citation { marker:string; url:string; title:string; snippet:string }
+type Sev = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+interface Bullet {
+  text: string;
+  source: number;
+  sev: Sev;
+}
+interface Section {
+  name: SectionName;
+  summary: string;
+  bullets: Bullet[];
+}
+interface Citation {
+  marker: string;
+  url: string;
+  title: string;
+  snippet: string;
+}
 
-interface SerperOrganic { title:string; link:string; snippet?:string }
-interface SerperResp    { organic?:SerperOrganic[] }
+interface SerperOrganic {
+  title: string;
+  link: string;
+  snippet?: string;
+}
+interface SerperResp {
+  organic?: SerperOrganic[];
+}
 
-interface FirecrawlResp { article?:{ text_content?:string } }
+interface FirecrawlResp {
+  article?: { text_content?: string };
+}
 
-interface ProxyCurlProfile { headline?:string }
-interface ProxyCurlCompany { industry?:string; founded_year?:number }
+interface ProxyCurlProfile {
+  headline?: string;
+}
+interface ProxyCurlCompany {
+  industry?: string;
+  founded_year?: number;
+}
 
-export interface SpiderPayload{
-  company:string; domain:string; generated:string;
-  summary:string; sections:Section[]; citations:Citation[];
-  cost:{ serper:number; firecrawl:number; proxycurl:number; llm:number; total:number };
+export interface SpiderPayload {
+  company: string;
+  domain: string;
+  generated: string;
+  summary: string;
+  sections: Section[];
+  citations: Citation[];
+  cost: {
+    serper: number;
+    firecrawl: number;
+    proxycurl: number;
+    llm: number;
+    total: number;
+  };
 }
 
 /*────────────────────── INPUT SCHEMA ───────────────────*/
 const schema = z.object({
   company_name: z.string().trim().min(1),
-  domain:       z.string().trim().min(3),
-  owner_names:  z.array(z.string().trim()).optional(),
+  domain: z.string().trim().min(3),
+  owner_names: z.array(z.string().trim()).optional(),
 });
 
 /*──────────────────────── HELPERS ───────────────────────*/
-const sha256 = (s:string)=>createHash("sha256").update(s).digest("hex");
-const trunc  = (s:string,n:number)=>s.length<=n?s:s.slice(0,n-1)+"…";
-const tokens = (s:string)=>Math.ceil(s.length/3.5);
-const price  = (inT:number,outT:number)=>inT*0.0004 + outT*0.0016;
+const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+const trunc = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`);
+const tokens = (s: string) => Math.ceil(s.length / 3.5);
+const price = (inT: number, outT: number) => inT * 0.0004 + outT * 0.0016;
 
-/* cheap “stem” */
-const cheapStem = (s:string)=>
-  s.toLowerCase().split(/\W+/).map(w=>w.replace(/[aeiou]/g,"").slice(0,4)).join("");
+const cheapStem = (s: string) =>
+  s
+    .toLowerCase()
+    .split(/\W+/)
+    .map(w => w.replace(/[aeiou]/g, "").slice(0, 4))
+    .join("");
 
-/* LLM wrapper (no suppression) */
+/* LLM wrapper */
 const ai = new OpenAI({ apiKey: OPENAI_API_KEY! });
 let usdSpent = 0;
-async function llm(prompt:string, ctx:string, maxTokens:number):Promise<string>{
+async function llm(prompt: string, ctx: string, maxTokens: number): Promise<string> {
   const result = await ai.chat.completions.create({
-    model: MODEL, temperature: 0.25, max_tokens: maxTokens,
-    messages:[{role:"system",content:prompt},{role:"user",content:ctx}],
+    model: MODEL,
+    temperature: 0.25,
+    max_tokens: maxTokens,
+    messages: [
+      { role: "system", content: prompt },
+      { role: "user", content: ctx },
+    ],
   });
-  usdSpent += price(tokens(prompt)+tokens(ctx), result.usage?.completion_tokens ?? maxTokens);
+  usdSpent += price(
+    tokens(prompt) + tokens(ctx),
+    result.usage?.completion_tokens ?? maxTokens,
+  );
   return result.choices[0].message.content!.trim();
 }
 
-async function postJSON<T>(url:string, body:unknown, hdr:Record<string,string>):Promise<T>{
-  const res = await fetch(url,{method:"POST",headers:{...hdr,"Content-Type":"application/json"},body:JSON.stringify(body)});
-  if(!res.ok) throw new Error(`${url} ${res.status}`);
+async function postJSON<T>(
+  url: string,
+  body: unknown,
+  hdr: Record<string, string>,
+): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { ...hdr, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${url} ${res.status}`);
   return res.json() as Promise<T>;
 }
 
-/*──────────────────────── REGEX & SCORE ────────────────*/
-const RE_EMAIL  = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
-const RE_PHONE  = /\b\+?\d[\d\s().-]{6,}\d\b/g;
-const RE_SECRET = /\b(api[_-]?key|token|secret|password|authorization|bearer)\b/i;
-const RE_PDFXLS = /\.(pdf|xlsx)$/i;
-const RISK_WORDS = /breach|leak|ransom|hack|apikey|secret|password|lawsuit|contract|invoice|pii/i;
+/*──────────────────────── REGEX / SCORE ────────────────*/
+const RE_EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const RE_PHONE = /\b(\+?1[-.\s]?)?\(?(\d{3})\)?[-.\s]?(\d{3})[-.\s]?(\d{4})\b/g;
+const RE_SECRET =
+  /\b(api[_-]?key|token|secret|password|authorization|bearer|credential)\b/i;
+const RE_PDFXLS = /\.(pdf|xlsx|csv)$/i;
+const RISK_WORDS =
+  /breach|leak|ransom|hack|apikey|secret|password|token|credential|lawsuit|complaint|sec filing|10-k|10-q|vulnerability|malware/i;
 
-const classify=(s:string):Sev=>{
-  const t=s.toLowerCase();
-  if(RE_SECRET.test(t)) return "CRITICAL";
-  if(RISK_WORDS.test(t)) return "HIGH";
-  if(/index of/.test(t)||RE_PDFXLS.test(t)) return "MEDIUM";
+const classify = (s: string): Sev => {
+  const t = s.toLowerCase();
+  if (RE_SECRET.test(t) || /data (breach|leak)/.test(t)) return "CRITICAL";
+  if (RISK_WORDS.test(t)) return "HIGH";
+  if (/index of/.test(t) || RE_PDFXLS.test(t)) return "MEDIUM";
   return "LOW";
 };
 
-const jaccard=(a:string,b:string)=>{
-  const A=new Set(a.toLowerCase().split(/\W+/));
-  const B=new Set(b.toLowerCase().split(/\W+/));
-  const inter=[...A].filter(x=>B.has(x)).length;
-  return inter/(A.size+B.size-inter);
+const jaccard = (a: string, b: string) => {
+  const A = new Set(a.toLowerCase().split(/\W+/));
+  const B = new Set(b.toLowerCase().split(/\W+/));
+  const inter = [...A].filter(x => B.has(x)).length;
+  return inter / (A.size + B.size - inter);
 };
 
-const scoreSerp=(o:SerperOrganic,domain:string)=>{
-  let s=0;
-  if(o.link.includes(domain)) s+=0.3;
-  if(RE_EMAIL.test(o.snippet??"")||RE_PHONE.test(o.snippet??"")) s+=0.2;
-  if(/\.(gov|edu|mil)/.test(o.link)||RE_PDFXLS.test(o.link))    s+=0.2;
-  if(RISK_WORDS.test(o.snippet??""))                           s+=0.2;
-  if(/index of|error/i.test(o.title)) s+=0.1;
+/*──────────────────────── SCORING FUNCTION ─────────────*/
+const scoreSerp = (o: SerperOrganic, domain: string): number => {
+  let s = 0;
+  if (o.link.includes(domain)) s += 0.3;
+  if (RE_EMAIL.test(o.snippet ?? "") || RE_PHONE.test(o.snippet ?? "")) s += 0.2;
+  if (/\.(gov|edu|mil)/.test(o.link) || RE_PDFXLS.test(o.link)) s += 0.2;
+  if (RISK_WORDS.test(o.snippet ?? "")) s += 0.2;
+  if (/index of|error/i.test(o.title)) s += 0.1;
   return s;
 };
 
-/*──────────────────────── MAIN ─────────────────────────*/
-export async function runSpider(raw:unknown):Promise<SpiderPayload>{
-  const t0 = performance.now();
-  const { company_name, domain, owner_names=[] } = schema.parse(raw);
+/*──────────────────────── CONTENT CLASSIFIERS ──────────*/
+const classifyContent = (
+  text: string,
+  url: string,
+  title: string,
+): SectionName => {
+  const content = `${text} ${title}`.toLowerCase();
 
-  const canon = company_name.toLowerCase()
-    .replace(/[,.]?\s*(inc|llc|ltd|corp(or)?(ation)?|limited|company|co)\s*$/i,"")
-    .replace(/[.,']/g,"").trim();
+  // Cyber indicators (highest priority for security issues)
+  if (
+    content.match(
+      /breach|hack|vulnerability|security incident|data leak|cyber|malware|phishing|ransomware|exposed|credentials|api[_-]?key|token|password/,
+    ) ||
+    url.includes("github.com") ||
+    url.includes("pastebin") ||
+    url.includes("archive.org")
+  ) {
+    return "Cyber";
+  }
+
+  // Legal indicators  
+  if (
+    content.match(
+      /lawsuit|litigation|court case|legal action|violation|complaint|settlement|sec filing|10-k|10-q|regulatory|fine|penalty/,
+    ) ||
+    url.match(/sec\.gov|justia|law|legal|court|docket/)
+  ) {
+    return "Legal";
+  }
+
+  // Leadership indicators
+  if (
+    content.match(
+      /\b(ceo|president|founder|director|executive|management|board member|owner|principal)\b/,
+    ) ||
+    url.includes("linkedin.com") ||
+    content.match(/biography|profile.*executive/)
+  ) {
+    return "Leadership";
+  }
+
+  // Reputation indicators
+  if (
+    content.match(
+      /review|rating|star|complaint|testimonial|feedback|recommendation|customer.*service|bbb.*rating/,
+    ) ||
+    url.match(/yelp|google.*review|bbb\.org|trustpilot|facebook|twitter|nextdoor/) ||
+    content.match(/\d+\.\d+.*star|rated.*out of/)
+  ) {
+    return "Reputation";
+  }
+
+  // Corporate (financial, business info)
+  if (
+    content.match(
+      /revenue|profit|financial|earnings|business.*model|company.*info|corporation|incorporated|established.*\d{4}|founded/,
+    ) ||
+    content.match(/annual.*report|quarterly|financial.*statement/)
+  ) {
+    return "Corporate";
+  }
+
+  return "Misc";
+};
+
+const isHighQualityContent = (text: string): boolean => {
+  // Filter out obvious junk first
+  if (text.length < 50) return false;
+  if (text.match(/^(call now|click here|visit website|more info|directions)/i))
+    return false;
+  if (text.match(/cookies?.*policy|privacy policy|terms of service|lorem ipsum/i))
+    return false;
+
+  // Filter repetitive marketing templates
+  const marketingJunk = [
+    /call.*\(\d{3}\).*\d{3}-\d{4}.*for.*estimate/i,
+    /trusted.*since.*\d{4}.*serving/i,
+    /competitive.*pricing.*free.*estimate/i,
+  ];
+  if (marketingJunk.some(p => p.test(text))) return false;
+
+  // If it passes the junk filters, it's decent quality
+  // High-value patterns aren't required but add confidence
+  return true;
+};
+
+/*──────────────────────── MAIN ─────────────────────────*/
+export async function runSpider(raw: unknown): Promise<SpiderPayload> {
+  const t0 = performance.now();
+  const { company_name, domain, owner_names = [] } = schema.parse(raw);
+
+  const canon = company_name
+    .toLowerCase()
+    .replace(
+      /[,.]?\s*(inc|llc|ltd|corp(or)?(ation)?|limited|company|co)\s*$/i,
+      "",
+    )
+    .replace(/[.,']/g, "")
+    .trim();
 
   /* containers */
-  const bullets:Record<SectionName,Bullet[]>={
-    Corporate:[],Legal:[],Cyber:[],Reputation:[],Leadership:[],Misc:[],
+  const bullets: Record<SectionName, Bullet[]> = {
+    Corporate: [],
+    Legal: [],
+    Cyber: [],
+    Reputation: [],
+    Leadership: [],
+    Misc: [],
   };
-  const citations:Citation[]=[];
-  const stemSeen=new Set<string>();
-  const hostCount:Record<string,number>={};
+  const citations: Citation[] = [];
+  const stemSeen = new Set<string>();
+  const hostCount: Record<string, number> = {};
 
   /* stats */
-  let serper=0, fire=0, curl=0;
+  let serper = 0,
+    fire = 0,
+    curl = 0;
 
-  /*──── dork queue ────*/
-  const qBase = (kw:string)=>`("${canon}" OR "${domain}") ${kw}`;
-  const queue:string[]=[
-    qBase("filetype:pdf"),
-    qBase("filetype:xlsx"),
-    qBase('site:*.gov'),
-    `"@${domain}" site:github.com`,
-    `"${canon}"`,
-    `"${canon}" site:${domain}`,
-    qBase('("breach" OR "leak" OR "ransom")'),
-    qBase('("password" OR "apikey" OR "secret")'),
+  /*──── targeted dorks ────*/
+  const buildTargetedQueries = (
+    canonName: string,
+    dom: string,
+    owners: string[],
+  ): string[] => [
+    // High-value documents
+    `"${canonName}" filetype:pdf (annual OR financial OR report OR filing)`,
+    `"${canonName}" filetype:xlsx (financial OR data OR report)`,
+    `"${canonName}" filetype:csv`,
+    
+    // Legal and regulatory
+    `"${canonName}" site:sec.gov`,
+    `"${canonName}" (lawsuit OR litigation OR "legal action" OR violation)`,
+    
+    // Security and technical
+    `"${dom}" (breach OR "data leak" OR security OR vulnerability) -tutorial`,
+    `"${dom}" (api OR key OR token OR password) -guide -tutorial -example`,
+    `"@${dom}" site:github.com`,
+    
+    // Business intelligence
+    `"${canonName}" (acquisition OR merger OR partnership OR "press release")`,
+    `"${canonName}" -site:${dom} (review OR complaint OR rating)`,
+    
+    // Leadership
+    ...owners.slice(0, 3).map(o => `"${o}" "${canonName}" (profile OR biography OR executive)`),
+    
+    // Fallback broad searches
+    `"${canonName}" -marketing -advertisement`,
+    `site:${dom} -www.${dom}`,
   ];
-  owner_names.forEach(o=>queue.push(`"${o}" ("${canon}" OR "${domain}")`));
+
+  const queue: string[] = buildTargetedQueries(canon, domain, owner_names);
   const seenQ = new Set(queue);
   const seenUrl = new Set<string>();
 
-  interface Hit{title:string;link:string;snippet?:string;score:number}
-  const hits:Hit[]=[];
+  interface Hit {
+    title: string;
+    link: string;
+    snippet?: string;
+    score: number;
+  }
+  const hits: Hit[] = [];
 
   /*──────── SERPER BFS ───────*/
-  while(queue.length && serper<MAX_SERPER && performance.now()-t0<WALL_MS){
+  while (queue.length && serper < MAX_SERPER && performance.now() - t0 < WALL_MS) {
     const q = queue.shift()!;
     const sr = await postJSON<SerperResp>(
-      SERPER,{q,num:MAX_SERP_PAGE,gl:"us",hl:"en"},{"X-API-KEY":SERPER_KEY!}).catch(()=>({organic:[]}));
+      SERPER,
+      { q, num: MAX_SERP_PAGE, gl: "us", hl: "en" },
+      { "X-API-KEY": SERPER_KEY! },
+    ).catch(() => ({ organic: [] }));
     serper++;
-    for(const o of sr.organic!){
-      const url=o.link; if(!url) continue;
-      const canonUrl=url.replace(/(\?|#).*/,"");
-      if(seenUrl.has(canonUrl)) continue;
 
-      const joined=(o.title+o.snippet).toLowerCase();
-      if(!joined.includes(canon)&&!joined.includes(domain)) continue;
-      if(jaccard(o.title,o.snippet??"")>0.85) continue;
+    for (const o of sr.organic ?? []) {
+      const url = o.link;
+      if (!url) continue;
+      const norm = url.replace(/(\?|#).*/, "");
+      if (seenUrl.has(norm)) continue;
+      seenUrl.add(norm);
 
-      seenUrl.add(canonUrl);
-      hits.push({title:o.title,link:url,snippet:o.snippet,score:scoreSerp(o,domain)});
+      const joined = `${o.title} ${o.snippet}`.toLowerCase();
+      if (!joined.includes(canon) && !joined.includes(domain)) continue;
+
+      hits.push({
+        title: o.title,
+        link: url,
+        snippet: o.snippet,
+        score: scoreSerp(o, domain),
+      });
 
       /* host expansion */
-      try{
-        const host=new URL(url).hostname;
-        if(!seenQ.has(host)){ seenQ.add(host); queue.push(`("${canon}" OR "${domain}") site:${host}`); }
-      }catch{/* ignore */}
+      try {
+        const host = new URL(url).hostname;
+        if (!seenQ.has(host)) {
+          seenQ.add(host);
+          queue.push(`("${canon}" OR "${domain}") site:${host}`);
+        }
+      } catch {
+        /* ignore */
+      }
     }
   }
-  hits.sort((a,b)=>b.score-a.score);
+  hits.sort((a, b) => b.score - a.score);
 
   /*──────── ProxyCurl enrich ─────*/
-  const liCo=hits.find(h=>h.link.includes("linkedin.com/company/"));
-  if(liCo&&curl<MAX_CURL){
-    const r=await fetch(`${CURL_C}?url=${encodeURIComponent(liCo.link)}`,
-      {headers:{Authorization:`Bearer ${PROXYCURL_KEY!}`}}).catch(()=>null);
+  const liCo = hits.find(h => h.link.includes("linkedin.com/company/"));
+  if (liCo && curl < MAX_CURL) {
+    const r = await fetch(`${CURL_C}?url=${encodeURIComponent(liCo.link)}`, {
+      headers: { Authorization: `Bearer ${PROXYCURL_KEY!}` },
+    }).catch(() => null);
     curl++;
-    if(r?.ok){
-      const j=await r.json() as ProxyCurlCompany;
-      hits.unshift({...liCo,snippet:`${j.industry??""} ${j.founded_year??""}`.trim(),score:0.8});
+    if (r?.ok) {
+      const j = (await r.json()) as ProxyCurlCompany;
+      hits.unshift({
+        ...liCo,
+        snippet: `${j.industry ?? ""} ${j.founded_year ?? ""}`.trim(),
+        score: 0.8,
+      });
     }
   }
-  for(const owner of owner_names.slice(0,9)){
-    if(curl>=MAX_CURL) break;
-    const sr=await postJSON<SerperResp>(SERPER,
-      {q:`"${owner}" "linkedin.com/in/"`,num:5,gl:"us",hl:"en"},{"X-API-KEY":SERPER_KEY!}).catch(()=>({organic:[]}));
+  for (const owner of owner_names.slice(0, 9)) {
+    if (curl >= MAX_CURL) break;
+    const sr = await postJSON<SerperResp>(
+      SERPER,
+      { q: `"${owner}" "linkedin.com/in/"`, num: 5, gl: "us", hl: "en" },
+      { "X-API-KEY": SERPER_KEY! },
+    ).catch(() => ({ organic: [] }));
     serper++;
-    const p=sr.organic![0]; if(!p) continue;
-    const enrich=await fetch(`${CURL_P}?linkedin_profile_url=${encodeURIComponent(p.link)}`,
-      {headers:{Authorization:`Bearer ${PROXYCURL_KEY!}`}}).catch(()=>null);
+    const p = sr.organic?.[0];
+    if (!p) continue;
+    const enrich = await fetch(
+      `${CURL_P}?linkedin_profile_url=${encodeURIComponent(p.link)}`,
+      { headers: { Authorization: `Bearer ${PROXYCURL_KEY!}` } },
+    ).catch(() => null);
     curl++;
-    const headline=enrich?.ok?(await enrich.json() as ProxyCurlProfile).headline:"";
-    hits.unshift({title:`${owner} – LinkedIn`,link:p.link,snippet:headline,score:0.7});
+    const headline = enrich?.ok ? ((await enrich.json()) as ProxyCurlProfile).headline : "";
+    hits.unshift({
+      title: `${owner} – LinkedIn`,
+      link: p.link,
+      snippet: headline,
+      score: 0.7,
+    });
   }
 
   /*──────── Firecrawl ───────*/
-  const targets=hits.slice(0,MAX_FIRE);
-  const scraped=new Map<string,string>();
-  for(let i=0;i<targets.length&&fire<MAX_FIRE;i+=BATCH_FIRE){
-    await Promise.all(targets.slice(i,i+BATCH_FIRE).map(async h=>{
-      if(performance.now()-t0>=WALL_MS) return;
-      const txt=await Promise.race([
-        postJSON<FirecrawlResp>(FIRE,{url:h.link,depth:0},
-          {Authorization:`Bearer ${FIRECRAWL_KEY!}`}),
-        new Promise<null>((_,rej)=>setTimeout(()=>rej("TO"),FIRE_TIMEOUT)),
-      ]).then(r=>r?.article?.text_content??null).catch(()=>null);
-      fire++; if(txt) scraped.set(sha256(h.link),txt);
-    }));
+  const targets = hits.slice(0, MAX_FIRE);
+  const scraped = new Map<string, string>();
+  for (let i = 0; i < targets.length && fire < MAX_FIRE; i += BATCH_FIRE) {
+    await Promise.all(
+      targets.slice(i, i + BATCH_FIRE).map(async h => {
+        if (performance.now() - t0 >= WALL_MS) return;
+        const txt = await Promise.race([
+          postJSON<FirecrawlResp>(
+            FIRE,
+            { url: h.link, depth: 0 },
+            { Authorization: `Bearer ${FIRECRAWL_KEY!}` },
+          ),
+          new Promise<null>((_, rej) => setTimeout(() => rej("TO"), FIRE_TIMEOUT)),
+        ])
+          .then(r => r?.article?.text_content ?? null)
+          .catch(() => null);
+        fire++;
+        if (txt) scraped.set(sha256(h.link), txt);
+      }),
+    );
   }
 
-  /*──────── Bullet & Citations ─────────*/
-  const addBullet=(sec:SectionName,text:string,src:number)=>{
-    if(bullets[sec].length>=BULLET_CAP) return;
-    if(!text.toLowerCase().includes(canon)&&!text.toLowerCase().includes(domain)) return;
-    if(sec==="Cyber" && !RISK_WORDS.test(text)) return;     // stricter Cyber gate
-    const sig=cheapStem(text).slice(0,120);
-    if(stemSeen.has(sig)) return;
-    stemSeen.add(sig);
-    const host=new URL(citations[src-1].url).hostname;
-    if((hostCount[host]=(hostCount[host]??0)+1)>6) return;
-    bullets[sec].push({text,source:src,sev:classify(text)});
+  /*──────── Enhanced Deduplication ─────*/
+  const isDuplicate = (
+    newText: string,
+    allBul: Record<SectionName, Bullet[]>,
+  ): boolean => {
+    const newClean = newText.toLowerCase().replace(/\s+/g, " ").trim();
+    const allExisting = Object.values(allBul).flat();
+    
+    return allExisting.some(b => {
+      const exist = b.text.toLowerCase().replace(/\s+/g, " ").trim();
+      
+      // High similarity check (Jaccard > 0.75)
+      const sim = jaccard(newClean, exist);
+      if (sim > 0.75) return true;
+
+      // Phone number repetition check
+      const newPhones = newClean.match(RE_PHONE) ?? [];
+      const existPhones = exist.match(RE_PHONE) ?? [];
+      if (
+        newPhones.length &&
+        existPhones.length &&
+        newPhones.some((p: string) => existPhones.includes(p as never)) &&
+        sim > 0.5
+      ) {
+        return true;
+      }
+
+      // Marketing template repetition
+      const marketing = [
+        /established.*\d{4}.*serving/,
+        /call.*for.*estimate/,
+        /competitive.*pricing/,
+        /trusted.*electrical/,
+      ];
+      const bothTemplate = marketing.some(
+        t => t.test(newClean) && t.test(exist),
+      );
+      return bothTemplate && sim > 0.4;
+    });
   };
 
-  targets.forEach((h,idx)=>{
-    const body=scraped.get(sha256(h.link)) ?? h.snippet ?? h.title;
-    const txt=trunc(body.replace(/\s+/g," ").trim(),BULLET_LEN);
+  const addBullet = (sec: SectionName, text: string, src: number) => {
+    if (bullets[sec].length >= BULLET_CAP) return;
 
-    citations[idx]={marker:`[${idx+1}]`,url:h.link,title:h.title,snippet:trunc(txt,250)};
+    // Content quality check
+    if (!isHighQualityContent(text)) return;
+    
+    // Global deduplication check
+    if (isDuplicate(text, bullets)) return;
+    
+    // Domain relevance check
+    if (!text.toLowerCase().includes(canon) && !text.toLowerCase().includes(domain)) return;
 
-    let sec:SectionName="Corporate";
-    if(h.link.includes("github.com")||h.link.includes("pastebin")) sec="Cyber";
-    else if(/sec\.gov|10-q|10-k/i.test(h.link))                   sec="Legal";
-    else if(h.link.includes("linkedin.com"))                      sec="Leadership";
-    else if(/twitter|facebook|nextdoor/.test(h.link))             sec="Reputation";
-    else if(classify(txt)==="CRITICAL"||classify(txt)==="HIGH")   sec="Cyber";
-    addBullet(sec,txt,idx+1);
+    // Safe host extraction and diversity check
+    const srcUrl = citations[src - 1]?.url ?? "";
+    let host = "unknown";
+    try {
+      if (srcUrl) host = new URL(srcUrl).hostname;
+    } catch {
+      // ignore invalid URLs
+    }
+    
+    if ((hostCount[host] = (hostCount[host] ?? 0) + 1) > 6) return;
+
+    const sev = classify(text);
+    bullets[sec].push({ text, source: src, sev });
+  };
+
+  /*──────── Process targets ─────────*/
+  targets.forEach((h, idx) => {
+    const body = scraped.get(sha256(h.link)) ?? h.snippet ?? h.title;
+    const txt = trunc(body.replace(/\s+/g, " ").trim(), BULLET_LEN);
+
+    citations[idx] = {
+      marker: `[${idx + 1}]`,
+      url: h.link,
+      title: h.title,
+      snippet: trunc(txt, 250),
+    };
+
+    // Use content-based classification
+    const sec = classifyContent(txt, h.link, h.title);
+    addBullet(sec, txt, idx + 1);
   });
 
   /*──────── Section summaries ─────────*/
-  const sections:Section[] = await Promise.all(SECTIONS.map(async name=>{
-    const bl=bullets[name];
-    if(!bl.length) return {name,summary:"NSTR",bullets:bl};
-    const c=bl.filter(b=>b.sev==="CRITICAL").length;
-    const h=bl.filter(b=>b.sev==="HIGH").length;
-    return {
-      name,
-      summary:await llm(
+  const sections: Section[] = await Promise.all(
+    SECTIONS.map(async name => {
+      const bl = bullets[name];
+      if (!bl.length) return { name, summary: "NSTR", bullets: bl };
+      const c = bl.filter(b => b.sev === "CRITICAL").length;
+      const h = bl.filter(b => b.sev === "HIGH").length;
+      const summary = await llm(
         `${bl.length} findings (${c} CRITICAL, ${h} HIGH). Summarize in ≤3 sentences; no new facts.`,
-        bl.map(b=>b.text).join("\n"),SECT_TOK),
-      bullets:bl,
-    };
-  }));
+        bl.map(b => b.text).join("\n"),
+        SECT_TOK,
+      );
+      return { name, summary, bullets: bl };
+    }),
+  );
 
   /*──────── Executive summary ─────────*/
   const exec = await llm(
-    "Write a 3-5 sentence executive summary using ONLY the bullet list.",
-    sections.flatMap(s=>s.bullets.map(b=>b.text)).join("\n"),EXEC_TOK);
+    "Write a 3–5 sentence executive summary using ONLY the bullet list.",
+    sections.flatMap(s => s.bullets.map(b => b.text)).join("\n"),
+    EXEC_TOK,
+  );
 
   /*──────── Cost ──────────────────────*/
-  const cost={
+  const cost = {
     serper: serper * 0.005,
     firecrawl: fire * 0.001,
     proxycurl: curl * 0.01,
