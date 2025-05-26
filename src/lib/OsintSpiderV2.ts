@@ -128,12 +128,7 @@ const trunc = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1
 const tokens = (s: string) => Math.ceil(s.length / 3.5);
 const price = (inT: number, outT: number) => inT * 0.0004 + outT * 0.0016;
 
-const cheapStem = (s: string) =>
-  s
-    .toLowerCase()
-    .split(/\W+/)
-    .map(w => w.replace(/[aeiou]/g, "").slice(0, 4))
-    .join("");
+
 
 /* LLM wrapper */
 const ai = new OpenAI({ apiKey: OPENAI_API_KEY! });
@@ -314,7 +309,6 @@ export async function runSpider(raw: unknown): Promise<SpiderPayload> {
     Misc: [],
   };
   const citations: Citation[] = [];
-  const stemSeen = new Set<string>();
   const hostCount: Record<string, number> = {};
 
   /* stats */
@@ -325,37 +319,41 @@ export async function runSpider(raw: unknown): Promise<SpiderPayload> {
   /*──── targeted dorks ────*/
   const buildTargetedQueries = (
     canonName: string,
-    dom: string,
+    dom: string,  
     owners: string[],
-  ): string[] => [
-    // High-value documents
-    `"${canonName}" filetype:pdf (annual OR financial OR report OR filing)`,
-    `"${canonName}" filetype:xlsx (financial OR data OR report)`,
-    `"${canonName}" filetype:csv`,
-    
-    // Legal and regulatory
-    `"${canonName}" site:sec.gov`,
-    `"${canonName}" (lawsuit OR litigation OR "legal action" OR violation)`,
-    
-    // Security and technical
-    `"${dom}" (breach OR "data leak" OR security OR vulnerability) -tutorial`,
-    `"${dom}" (api OR key OR token OR password) -guide -tutorial -example`,
-    `"@${dom}" site:github.com`,
-    
-    // Business intelligence
-    `"${canonName}" (acquisition OR merger OR partnership OR "press release")`,
-    `"${canonName}" -site:${dom} (review OR complaint OR rating)`,
-    
-    // Leadership
-    ...owners.slice(0, 3).map(o => `"${o}" "${canonName}" (profile OR biography OR executive)`),
-    
-    // Fallback broad searches
-    `"${canonName}" -marketing -advertisement`,
-    `site:${dom} -www.${dom}`,
-  ];
+  ) => {
+    const queries: string[] = [
+      // High-value documents
+      `"${canonName}" filetype:pdf (annual OR financial OR report OR filing)`,
+      `"${canonName}" filetype:xlsx (financial OR data OR report)`,
+      `"${canonName}" filetype:csv`,
+      
+      // Legal and regulatory
+      `"${canonName}" site:sec.gov`,
+      `"${canonName}" (lawsuit OR litigation OR "legal action" OR violation)`,
+      
+      // Security and technical
+      `"${dom}" (breach OR "data leak" OR security OR vulnerability) -tutorial`,
+      `"${dom}" (api OR key OR token OR password) -guide -tutorial -example`,
+      `"@${dom}" site:github.com`,
+      
+      // Business intelligence
+      `"${canonName}" (acquisition OR merger OR partnership OR "press release")`,
+      `"${canonName}" -site:${dom} (review OR complaint OR rating)`,
+      
+      // Leadership
+      ...owners.slice(0, 3).map(o => `"${o}" "${canonName}" (profile OR biography OR executive)`),
+      
+      // Fallback broad searches
+      `"${canonName}" -marketing -advertisement`,
+      `site:${dom} -www.${dom}`,
+    ];
+    return queries;
+  };
 
-  const queue: string[] = buildTargetedQueries(canon, domain, owner_names);
-  const seenQ = new Set(queue);
+  const initialQueries = buildTargetedQueries(canon, domain, owner_names);
+  const queue: string[] = [...initialQueries];
+  const seenQ = new Set<string>(queue);
   const seenUrl = new Set<string>();
 
   interface Hit {
@@ -491,7 +489,7 @@ export async function runSpider(raw: unknown): Promise<SpiderPayload> {
       if (
         newPhones.length &&
         existPhones.length &&
-        newPhones.some((p: string) => existPhones.includes(p as never)) &&
+        newPhones.some(p => existPhones.includes(p)) &&
         sim > 0.5
       ) {
         return true;
