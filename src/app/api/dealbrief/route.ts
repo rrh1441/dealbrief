@@ -1,6 +1,8 @@
 /* ------------------------------------------------------------------
  *  API route:  POST /api/dealbrief
- *  Body JSON:  { "name": "<person>", "organization": "<company>" }
+ *  Body JSON can be either of the following shapes:
+ *    { "name": "<person>", "organization": "<company>" }
+ *    { "companyLeader": "<person>", "companyName": "<company>", "companyDomain"?: "<url>" }
  * -----------------------------------------------------------------*/
 
 import { NextRequest, NextResponse } from "next/server";
@@ -47,11 +49,13 @@ function normalizeCitations(
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, organization } = await req.json();
+    const body = await req.json();
+    const name = body.companyLeader ?? body.name;
+    const organization = body.companyName ?? body.organization;
 
     if (!name || !organization) {
       return NextResponse.json(
-        { error: "name and organization are required" },
+        { error: "name/companyLeader and organization/companyName are required" },
         { status: 400 }
       );
     }
