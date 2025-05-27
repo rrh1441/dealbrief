@@ -274,7 +274,19 @@
            firecrawlSuccesses++; return resp.data.article.text_content;
          }
          if(resp.success) return FIRECRAWL_SKIPPED;
-         if(permanentFail(resp.status,resp.error) && host) dynamicNoScrape.add(host);
+         
+         console.error(
+           `[Firecrawl API Error] ${tag} — ${url} (status ${resp.status ?? "?"}): ${resp.error}`,
+         );
+
+         if (resp.error?.toLowerCase().includes("load failed")) {
+           return FIRECRAWL_SKIPPED;          // treat like 'no article text'
+         }
+
+         if(permanentFail(resp.status,resp.error) && host) {
+           dynamicNoScrape.add(host);
+           console.warn(`[Firecrawl PermanentFailure] ${host} added to no-scrape list`);
+         }
          return null;
        }catch(e:unknown){
          const err = e as Error;
@@ -560,7 +572,7 @@
        if(scrape===FIRECRAWL_SKIPPED){
          filesForManualReview.push({
            url:hit.link,title:hit.title||"Untitled",serpSnippet:hit.snippet||"",
-           predictedInterest:"Page lacked parseable article content",
+           predictedInterest:"Page could not be loaded by Firecrawl",
            citationMarker});
          continue;
        }
