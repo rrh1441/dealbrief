@@ -53,7 +53,7 @@
    const MAX_TOKENS_FOR_INSIGHT_EXTRACTION_IN   = 7000;
    const MAX_TOKENS_FOR_INSIGHT_EXTRACTION_OUT  = 1000;
    const MAX_TOKENS_FOR_FILE_PREDICTION_OUT     = 150;
-   // const MAX_SOURCES_TO_LLM                     = 30;
+   const MAX_SOURCES_TO_LLM                     = 30;
    
    const SECTIONS = [
      "Corporate",
@@ -213,7 +213,7 @@
        totalLlmOut += r.usage?.completion_tokens ?? estimateTokens(txt);
        return txt.trim();
      }catch(e:unknown){
-       const err = e instanceof Error ? e : new Error(String(e));
+       const err = e as Error;
        console.error("[LLM] error",err.message);
        return null;
      }
@@ -277,7 +277,7 @@
          if(permanentFail(resp.status,resp.error) && host) dynamicNoScrape.add(host);
          return null;
        }catch(e:unknown){
-         const err = e instanceof Error ? e : new Error(String(e));
+         const err = e as Error;
          if(permanentFail(undefined,err.message) && host) dynamicNoScrape.add(host);
          return null;
        }
@@ -291,8 +291,16 @@
    const scoreSerpResultInitial = (
      r: SerperOrganicResult,
      domain: string,
+     companyCanon: string,
      riskKeywords: string[] = [],
    ): number => {
+     const phrase = companyCanon.toLowerCase();
+     if (
+       !(r.snippet || "").toLowerCase().includes(phrase) &&
+       !(r.title   || "").toLowerCase().includes(phrase)
+     ) {
+       return 0;          // skip if phrase absent
+     }
      let s=0.1;
      const snippet=(r.snippet||"").toLowerCase();
      const title  =(r.title  ||"").toLowerCase();
@@ -309,51 +317,51 @@
    /* full expanded dork list retained exactly as original (omitted here only in this comment) */
    {
      const dorks:{query:string,type:string,priority:number}[]=[];
-     const companyOrDomain=`("${canon}" OR "${domain}")`;
-     const companyOnly = `"${canon}"`;
+     const companyPhrase = `"${canon}"`;                     // exact phrase
+     const companyPhraseOrDomain = `(${companyPhrase} OR "${domain}")`;
      const push=(q:string,type:SectionName| "General",p:number)=>dorks.push({query:q,type,priority:p});
    
      /* --- legal / regulatory --- */
      ["lawsuit","litigation","court case","legal action","settlement","class action"].forEach(k=>
-       push(`${companyOrDomain} ${k}`,"Legal",10));
-     push(`${companyOrDomain} site:sec.gov "sec filing"`,"Financials",10);
-     push(`${companyOrDomain} site:sec.gov "10-K"`,"Financials",10);
-     push(`${companyOrDomain} site:sec.gov "10-Q"`,"Financials",10);
+       push(`${companyPhraseOrDomain} ${k}`,"Legal",10));
+     push(`${companyPhraseOrDomain} site:sec.gov "sec filing"`,"Financials",10);
+     push(`${companyPhraseOrDomain} site:sec.gov "10-K"`,"Financials",10);
+     push(`${companyPhraseOrDomain} site:sec.gov "10-Q"`,"Financials",10);
      ["fine","penalty","sanction","regulatory action","investigation"].forEach(k=>
-       push(`${companyOnly} ${k}`,"Legal",9));
+       push(`${companyPhrase} ${k}`,"Legal",9));
    
      /* --- cyber / breaches --- */
      ['"data breach"','"cyber attack"','hacked','"vulnerability disclosed"','"security incident"','ransomware']
-       .forEach(k=>push(`${companyOrDomain} ${k}`,"Cyber",10));
+       .forEach(k=>push(`${companyPhraseOrDomain} ${k}`,"Cyber",10));
      ['"exposed database"','"leaked credentials"','"api key leak"']
-       .forEach(k=>push(`${companyOrDomain} ${k}`,"Cyber",9));
+       .forEach(k=>push(`${companyPhraseOrDomain} ${k}`,"Cyber",9));
      ["pastebin.com","ghostbin.com","plaintext.in"].forEach(site=>
-       push(`site:${site} (${companyOrDomain})`,"Cyber",8));
-     push(`site:github.com (${companyOrDomain}) password`,"Cyber",8);
-     push(`site:github.com (${companyOrDomain}) secret`  ,"Cyber",8);
-     push(`site:github.com (${companyOrDomain}) apikey`  ,"Cyber",8);
+       push(`site:${site} (${companyPhraseOrDomain})`,"Cyber",8));
+     push(`site:github.com (${companyPhraseOrDomain}) password`,"Cyber",8);
+     push(`site:github.com (${companyPhraseOrDomain}) secret`  ,"Cyber",8);
+     push(`site:github.com (${companyPhraseOrDomain}) apikey`  ,"Cyber",8);
    
      /* --- reputation --- */
      ["scandal","controversy","fraud","misconduct","unethical","protest","boycott","\"consumer complaints\""]
-       .forEach(k=>push(`${companyOnly} ${k}`,"Reputation",9));
-     push(`${companyOnly} reviews complaint -site:${domain}`,"Reputation",8);
+       .forEach(k=>push(`${companyPhrase} ${k}`,"Reputation",9));
+     push(`${companyPhrase} reviews complaint -site:${domain}`,"Reputation",8);
    
      /* --- corporate / financials --- */
      ['"acquisition of"','"merger with"','"acquired by"','"invested in"','"partnership with"','"joint venture"']
-       .forEach(k=>push(`${companyOnly} ${k}`,"Corporate",7));
+       .forEach(k=>push(`${companyPhrase} ${k}`,"Corporate",7));
      ['"financial results"','earnings','"annual report"','"investor relations"','"funding round"']
-       .forEach(k=>push(`${companyOnly} ${k}`,"Financials",7));
+       .forEach(k=>push(`${companyPhrase} ${k}`,"Financials",7));
      ["layoffs","restructuring","chapter 11","bankruptcy","insolvency","store closures"]
-       .forEach(k=>push(`${companyOnly} ${k}`,"Corporate",8));
+       .forEach(k=>push(`${companyPhrase} ${k}`,"Corporate",8));
    
      /* simple fallbacks */
-     push(`"${canon}"`,"Corporate",5);
-     push(`"${canon}" site:${domain}`,"Corporate",4);
+     push(`${companyPhrase}`,"Corporate",5);
+     push(`${companyPhrase} site:${domain}`,"Corporate",4);
    
      owners.forEach(o=>{
        ["fraud","lawsuit","investigation","scandal","controversy","\"insider trading\""]
-         .forEach(k=>push(`"${o}" "${canon}" ${k}`,"Leadership",9));
-       push(`"${o}" "${canon}"`,"Leadership",6);
+         .forEach(k=>push(`"${o}" ${companyPhrase} ${k}`,"Leadership",9));
+       push(`"${o}" ${companyPhrase}`,"Leadership",6);
      });
      return dorks;
    };
@@ -363,7 +371,7 @@
    }
    function selectTopScrapingTargets(
      hits:{hit:SerperOrganicResult,dorkType:string}[],
-     canon:string, domain:string, max:number,
+     _canon:string, domain:string, max:number,
    ):PrioritizedSerpResult[]{
      const riskKw = RISK_WORDS_OS.source.replace(/\\b/g,"").replace(/^\(|\)$/g,"").split("|").map(s=>s.toLowerCase());
      const scored:PrioritizedSerpResult[] = hits.map(({hit,dorkType})=>{
@@ -375,7 +383,7 @@
        if(hit.link.match(FILE_EXT_REGEX)) pr+=2;
        if(hit.link.includes("news.")||hit.link.includes("/news")) pr+=3;
        if(hit.link.includes(domain)&&!hit.link.match(/\/(blog|news|press)/)) pr-=2;
-       const scoreInit=scoreSerpResultInitial(hit,domain,riskKw);
+       const scoreInit=scoreSerpResultInitial(hit,domain,_canon,riskKw);
        return {...hit,initialScore:scoreInit,dorkType,priorityForScraping:pr+scoreInit*5};
      });
      scored.sort((a,b)=>b.priorityForScraping-a.priorityForScraping);
@@ -414,7 +422,10 @@
              ? p.severitySuggestion as Severity : "INFO",
            sourceUrl:url,
          }));
-     }catch(e){ console.error("[Parse insight] error",e); }
+     }catch(e:unknown){ 
+       const err = e as Error;
+       console.error("[Parse insight] error",err); 
+     }
      return [];
    }
    
@@ -468,7 +479,10 @@
            {"X-API-KEY":SERPER_KEY!});
          serperQueries++;
          (r.organic||[]).forEach(h=>allSerpHits.push({hit:h,dorkType:d.type}));
-       }catch(e){ console.warn("[Serper] error",e); }
+       }catch(e:unknown){ 
+         const err = e as Error;
+         console.warn("[Serper] error",err); 
+       }
      }
      const serperResultsProcessed = allSerpHits.length;
    
@@ -551,6 +565,12 @@
          continue;
        }
        if(typeof scrape==="string" && scrape.length>150){
+         if (
+           typeof scrape === "string" &&
+           !scrape.toLowerCase().includes(canon.toLowerCase())
+         ) {
+           continue;   // page not about the company – ignore
+         }
          const insights = await extractInsightsFromPage(scrape,hit.link,canon,domain,owner_names);
          insights.forEach((ins:ExtractedInsight)=>{
            const sec=ins.categorySuggestion;
@@ -619,7 +639,10 @@
        generated: new Date().toISOString(),
        summary  : executiveSummary,
        sections : sectionsOutput,
-       citations,
+       citations: citations.slice(
+         0,
+         MAX_SOURCES_TO_LLM * 2 + owner_names.length + 10,
+       ),
        filesForManualReview,
        cost,
        stats:{
