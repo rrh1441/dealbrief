@@ -516,16 +516,17 @@
        const highCount=currentBullets.filter(b=>b.sev==="HIGH").length;
        const contextForLlm = currentBullets.slice(0, 20).map(b=>`- ${b.text} (Severity: ${b.sev}, Source: ${b.source})`).join("\n"); // Provide more context
    
-       const summaryPrompt = `You are a due diligence analyst summarizing findings for the "${sectionName}" section regarding "${companyCanon}".
+       const summaryContext = `You are a due diligence analyst summarizing findings for the "${sectionName}" section regarding "${companyCanon}".
+   This section has ${criticalCount} CRITICAL and ${highCount} HIGH priority findings out of ${currentBullets.length} total.
    Based ONLY on the following bullet points (max 20 shown), write a concise summary of 1-3 sentences.
-   Focus on the most impactful information. Mention counts of CRITICAL/HIGH findings if significant. Do not invent facts or speculate.
+   Focus on the most impactful information. Do not invent facts or speculate.
    Bullet points:
    ${contextForLlm}`;
        const systemPrompt = "Produce a brief, factual summary for a due diligence report section.";
    
        return {
          name: sectionName,
-         summary: await callLlm(systemPrompt, summaryPrompt, MAX_TOKENS_SECTION_SUMMARY), // Swapped prompt and context order for callLlm
+         summary: await callLlm(systemPrompt, summaryContext, MAX_TOKENS_SECTION_SUMMARY),
          bullets:currentBullets, // Return all bullets for the section, not just those sent to LLM
        };
      }));
@@ -553,9 +554,8 @@
      const executiveSummaryPrompt = `You are writing a 3-5 sentence executive summary for a web-only OSINT due diligence report on "${companyCanon}".
    Based ONLY on the provided section summaries and key critical/high findings below, synthesize a high-level overview.
    Focus on the most impactful intelligence (positive or negative). Avoid jargon. Be objective.`;
-     const execSystemPrompt = "Produce a concise, factual executive summary for a due diligence report.";
    
-     const executiveSummary = await callLlm(execSystemPrompt, truncateText(execSummaryContext, 4000), MAX_TOKENS_EXEC_SUMMARY); // Swapped prompt and context
+     const executiveSummary = await callLlm("Produce a concise, factual executive summary for a due diligence report.", truncateText(executiveSummaryPrompt + "\n\nContext:\n" + execSummaryContext, 8000), MAX_TOKENS_EXEC_SUMMARY);
      console.log(`[OsintSpider] LLM executive summary generated.`);
    
      /*──────── Cost & Final Payload from OsintSpiderV3 ───────────────────*/

@@ -7,7 +7,7 @@
  * -----------------------------------------------------------------*/
 
 import { NextRequest, NextResponse } from "next/server";
-import { runSpider } from "@/lib/OsintSpiderV2";
+import { runOsintSpider } from "@/lib/OsintSpiderV2";
 import { renderSpiderHtml } from "@/lib/renderSpiderHtml";
 
 export async function POST(req: NextRequest) {
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     }
 
     /* ── run OSINT-Spider-V2 ────────────────────────────────────────── */
-    const spider = await runSpider({
+    const spider = await runOsintSpider({
       company_name: companyName,
       domain:       companyDomain,
       owner_names:  leaderName ? [leaderName] : [],
