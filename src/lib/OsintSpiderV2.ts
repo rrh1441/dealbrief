@@ -536,7 +536,7 @@ export async function runSpider(raw: unknown): Promise<SpiderPayload> {
     bullets[sec].push({ text, source: src, sev });
   };
 
-  /*──────── Process targets ─────────*/
+  /*──────── Process tar gets ─────────*/
   targets.forEach((h, idx) => {
     const body = scraped.get(sha256(h.link)) ?? h.snippet ?? h.title;
     const txt = trunc(body.replace(/\s+/g, " ").trim(), BULLET_LEN);
