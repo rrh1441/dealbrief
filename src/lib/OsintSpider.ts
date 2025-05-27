@@ -58,14 +58,14 @@ interface ExtractedInsight {
     categorySuggestion: SectionName; severitySuggestion: Severity;
     sourceUrl: string; citationMarker?: string;
 }
-interface ReportBullet {
+export interface ReportBullet {
     text: string; quote?: string; sourceUrl: string;
     citationMarker: string; severity: Severity;
     origin: 'llm_insight' | 'heuristic_snippet' | 'file_placeholder' | 'proxycurl_summary';
     llmSuggestedCategory?: SectionName; // ADDED
 }
-interface SectionOutput  { name:SectionName; summary:string; bullets:ReportBullet[] }
-interface Citation { marker:string; url:string; title:string; snippet:string }
+export interface SectionOutput  { name:SectionName; summary:string; bullets:ReportBullet[] }
+export interface Citation { marker:string; url:string; title:string; snippet:string }
 
 interface SerperOrganicResult { title:string; link:string; snippet?:string; position?: number; }
 interface SerperResponse    { organic?:SerperOrganicResult[] }
@@ -99,11 +99,11 @@ interface ProxyCurlCompanyResult extends ProxyCurlCommon {
     headquarters?: { city: string; state: string; country: string; };
 }
 
-interface FileForManualReview {
+export interface FileForManualReview {
     url: string; title: string; serpSnippet: string;
     predictedInterest: string; citationMarker: string;
 }
-export interface OsintSpiderPayloadV4 {
+export interface OsintSpiderPayload {
   company:string; domain:string; generated:string;
   summary:string; sections:SectionOutput[]; citations:Citation[];
   filesForManualReview: FileForManualReview[];
@@ -387,7 +387,7 @@ Be brief (1 phrase/sentence). If interest is unclear, state "Unclear interest fr
 }
 
 /*──────────────────────── MAIN OsintSpiderV4 Function ──────────────────────*/
-export async function runOsintSpiderV4(rawInput:unknown):Promise<OsintSpiderPayloadV4>{
+export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayload>{
   const t0 = performance.now();
   firecrawlGlobalAttempts = 0; firecrawlGlobalSuccesses = 0;
   totalLlmInputTokens = 0; totalLlmOutputTokens = 0;

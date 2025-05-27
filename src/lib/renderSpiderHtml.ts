@@ -7,7 +7,7 @@
    • prepareHtmlForClipboard() – strip links (except in <sup>) & give plain-text
    ------------------------------------------------------------------------ */
 
-   import type { OsintSpiderPayload, OsintSpiderPayloadV4, ReportBullet, FileForManualReview, Citation, SectionOutput } from "@/lib/OsintSpiderV2";
+   import type { OsintSpiderPayload, ReportBullet, FileForManualReview, Citation, SectionOutput } from "@/lib/OsintSpider";
 
    /* superscript injection -------------------------------------------------- */
    export function normalizeCitations(
@@ -31,8 +31,8 @@
      data: OsintSpiderPayload,
      opts: { showEmpty?: boolean } = {},
    ): string {
-     const bulletHtml = (b: typeof data.sections[0]["bullets"][0]) =>
-       `<li>${b.text} <sup>[${b.source}]</sup></li>`;
+       const bulletHtml = (b: typeof data.sections[0]["bullets"][0]) =>
+    `<li>${b.text} <sup>${b.citationMarker}</sup></li>`;
    
      const sectionHtml = (s: typeof data.sections[0]) => {
        if (!opts.showEmpty && s.bullets.length === 0) return "";
@@ -56,9 +56,9 @@
      return normalizeCitations(html, data.citations as { marker: string; url: string }[]);
    }
    
-   /* renderer for OsintSpiderPayloadV4 -------------------------------------- */
-   export function renderSpiderHtmlV4(
-     data: OsintSpiderPayloadV4,
+   /* renderer for OsintSpiderPayload -------------------------------------- */
+export function renderSpiderHtmlV4(
+  data: OsintSpiderPayload,
      opts: { showEmpty?: boolean } = {},
    ): string {
      const bulletHtmlV4 = (b: ReportBullet) =>
