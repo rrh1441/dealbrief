@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────────────────────
-   src/lib/OsintSpider.ts (Expanded Dorks, Firecrawl Blacklist, Robust LLM)
+   src/lib/OsintSpider.ts (Adjusted Firecrawl Batching & Timeouts)
    --------------------------------------------------------------------------
    Web-only due diligence with enhanced Firecrawl, ProxyCurl, and LLM-driven insight extraction.
    ------------------------------------------------------------------------ */
@@ -27,11 +27,11 @@
    
    const MAX_SERPER_CALLS   = 600;
    const MAX_SERP_RESULTS_PER_PAGE = 10;
-   const MAX_FIRECRAWL_TARGETS     = 50; // User okay with 50 for testing
+   const MAX_FIRECRAWL_TARGETS     = 50;
    const MAX_PROXYCURL_CALLS     = 10;
-       // const FIRECRAWL_BATCH_SIZE   = 5; // Currently unused
-   const FIRECRAWL_GLOBAL_BUDGET_MS = 420 * 1000; // 7 minutes for Firecrawl, leaving 5 for other ops within 12 min Vercel
-   const MAX_WALL_TIME_MS      = 12 * 60 * 1000; // Vercel limit 720s = 12 min
+       // const FIRECRAWL_BATCH_SIZE   = 15; // Currently unused
+   const FIRECRAWL_GLOBAL_BUDGET_MS = 420 * 1000; // UPDATED to 7 minutes for Firecrawl operations
+   const MAX_WALL_TIME_MS      = 700 * 1000; // Approx 11.6 minutes total (Vercel limit 720s)
    
    const LLM_MODEL_INSIGHT_EXTRACTION = "gpt-4o-mini";
    const LLM_MODEL_FILE_PREDICTION = "gpt-4o-mini";
@@ -57,17 +57,15 @@
        "twitter.com", "x.com", "www.twitter.com", "www.x.com",
        "tiktok.com", "www.tiktok.com",
        "reddit.com", "www.reddit.com", "old.reddit.com",
-       "googleusercontent.com", // Catches youtube cache and other google content services
+       "googleusercontent.com",
        "wsj.com", "www.wsj.com",
        "ft.com", "www.ft.com",
        "patreon.com", "www.patreon.com",
        "news.ycombinator.com",
        "apps.dos.ny.gov",
-       "yelp.com", "www.yelp.com", "m.yelp.com", // From previous logs
-       "nextdoor.com", // From previous logs
-       // Consider adding other major social/forum sites that are hard to scrape or low signal
+       "yelp.com", "www.yelp.com", "m.yelp.com",
+       "nextdoor.com", "www.nextdoor.com",
    ]);
-   
    
    /*──────────────────────── TYPES ──────────────────────────*/
    type Severity = "CRITICAL"|"HIGH"|"MEDIUM"|"LOW"|"INFO";
@@ -200,7 +198,7 @@
    
    /* ── Firecrawl with Enhanced Logging, 403 Handling, and Blacklist───── */
    let firecrawlGlobalAttempts = 0; let firecrawlGlobalSuccesses = 0;
-   const dynamicallyUnsupportedFirecrawlSites = new Set<string>(); // Renamed for clarity
+   const dynamicallyUnsupportedFirecrawlSites = new Set<string>();
    
    const firecrawlWithLogging = async (url: string, attemptInfoForLogs: string): Promise<string | null> => {
      const urlHostname = (() => { try { return new URL(url).hostname.replace(/^www\./,''); } catch { return ""; } })();
@@ -243,16 +241,22 @@
              console.warn(`[Firecrawl Unsupported via Exception] Added '${urlHostname}' to dynamic no-scrape list. Error: ${err.message}`);
              return "SITE_UNSUPPORTED_BY_FIRECRAWL";
          }
-         console.error(`[Firecrawl Exception] ${attemptInfoForLogs} - URL: ${url}, Timeout: ${timeoutMs}ms. Error: ${err.message}`);
+         // Check for timeout specifically
+         if (err.message.toLowerCase().includes("timeout")) {
+              console.warn(`[Firecrawl TimeoutCaught] ${attemptInfoForLogs} - URL: ${url}, Timeout: ${timeoutMs}ms. Error: ${err.message}`);
+         } else {
+              console.error(`[Firecrawl Exception] ${attemptInfoForLogs} - URL: ${url}, Timeout: ${timeoutMs}ms. Error: ${err.message}`);
+         }
          return null;
        }
      };
-     let content = await tryScrapeOnce(20000); // Increased initial timeout to 20s
+     // UPDATED Timeouts
+     let content = await tryScrapeOnce(25000); // Initial attempt with 25s
      if (content === "SITE_UNSUPPORTED_BY_FIRECRAWL") return null;
    
      if (content === null) {
        console.warn(`[Firecrawl Retry] First attempt failed for ${url} (${attemptInfoForLogs}). Retrying.`);
-       content = await tryScrapeOnce(30000); // Increased retry timeout to 30s
+       content = await tryScrapeOnce(40000); // Retry with 40s
        if (content === null) console.error(`[Firecrawl FailedAllAttempts] URL: ${url} (${attemptInfoForLogs}).`);
      }
      return content === "SITE_UNSUPPORTED_BY_FIRECRAWL" ? null : content;
@@ -269,7 +273,7 @@
      if(RISK_WORDS_OS.test(snippet) || RISK_WORDS_OS.test(title)) s+=0.25;
      if(r.link.match(FILE_EXTENSIONS_REGEX)) s += 0.1;
      if(r.link.includes("sec.gov") || r.link.includes("courtlistener.com") || r.link.includes("pacer.gov") || r.link.includes("justice.gov")) s += 0.2;
-     if(r.link.includes("news.") || r.link.includes("/news") || r.link.includes("prnewswire") || r.link.includes("reuters.com") || r.link.includes("bloomberg.com") || r.link.includes("wsj.com")) s += 0.15; // wsj might be blacklisted by firecrawl
+     if(r.link.includes("news.") || r.link.includes("/news") || r.link.includes("prnewswire") || r.link.includes("reuters.com") || r.link.includes("bloomberg.com") || r.link.includes("wsj.com")) s += 0.15;
      return Math.min(1.0, s);
    };
    
@@ -287,8 +291,8 @@
        // Cyber & Data Breaches
        { prefix: companyOrDomain, keywords: ['"data breach"', '"cyber attack"', "hacked", '"vulnerability disclosed"', '"security incident"', "ransomware"], type: "Cyber", priority: 10 },
        { prefix: companyOrDomain, keywords: ['"exposed database"', '"leaked credentials"', '"api key leak"'], type: "Cyber", priority: 9 },
-       // Cyber - Specific Sites (These are expanded by site)
-       { prefix: `site:pastebin.com (${companyOrDomain})`, keywords: [""], type: "Cyber", priority: 8 }, // Keyword is empty as site is main filter
+       // Cyber - Specific Sites
+       { prefix: `site:pastebin.com (${companyOrDomain})`, keywords: [""], type: "Cyber", priority: 8 },
        { prefix: `site:ghostbin.com (${companyOrDomain})`, keywords: [""], type: "Cyber", priority: 8 },
        { prefix: `site:plaintext.in (${companyOrDomain})`, keywords: [""], type: "Cyber", priority: 8 },
        { prefix: `site:github.com (${companyOrDomain})`, keywords: ["password", "secret", "apikey", '"config leak"', '"database dump"'], type: "Cyber", priority: 8 },
@@ -303,17 +307,16 @@
    
      baseDorkGroups.forEach(group => {
        group.keywords.forEach(keyword => {
-         let queryString = `${group.prefix} ${keyword}`.trim();
+         // If keyword is empty (for site-only searches), don't add an extra space
+         let queryString = keyword ? `${group.prefix} ${keyword}`.trim() : group.prefix.trim();
          if (group.suffix) queryString += group.suffix;
          expandedDorks.push({ query: queryString, type: group.type as SectionName, priority: group.priority });
        });
      });
    
-     // Broader discovery (remain as single queries)
      expandedDorks.push({ query: `"${companyCanon}"`, type: "Corporate", priority: 5 });
      expandedDorks.push({ query: `"${companyCanon}" site:${domain}`, type: "Corporate", priority: 4 });
    
-     // Owner-specific dorks (also expanded)
      ownerNames.forEach(owner => {
        const ownerRiskKeywords = ["fraud", "lawsuit", "investigation", "scandal", "controversy", '"insider trading"'];
        ownerRiskKeywords.forEach(keyword => {
@@ -323,7 +326,6 @@
      });
      return expandedDorks;
    };
-   
    
    /*───────────────── PHASE 2 (New): Smarter Scraping Target Selection ──────────────────*/
    interface PrioritizedSerpResult extends SerperOrganicResult {
@@ -400,22 +402,25 @@
        if (llmResponse) {
            try {
                let cleanJsonResponse = llmResponse.trim();
-               const jsonMatch = cleanJsonResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/); // Handles ```json ... ```
+               const jsonMatch = cleanJsonResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
                if (jsonMatch && jsonMatch[1]) {
                    cleanJsonResponse = jsonMatch[1].trim();
-               } else if (cleanJsonResponse.startsWith("```") && cleanJsonResponse.endsWith("```")) { // Handles ``` ... ```
+               } else if (cleanJsonResponse.startsWith("```") && cleanJsonResponse.endsWith("```")) {
                     cleanJsonResponse = cleanJsonResponse.substring(3, cleanJsonResponse.length - 3).trim();
                }
-               // Ensure it's an array before parsing, or that it starts with [ and ends with ]
+               
                if (!cleanJsonResponse.startsWith("[") || !cleanJsonResponse.endsWith("]")) {
-                   // If LLM returns a single object not in an array, or other non-array text after cleaning
                    if (cleanJsonResponse.startsWith("{") && cleanJsonResponse.endsWith("}")) {
-                       // Attempt to wrap single object into an array string
                        console.warn(`[LLM InsightParseWarn] LLM returned single object, wrapping in array for ${sourceUrl}. Resp: ${cleanJsonResponse.slice(0,100)}`);
                        cleanJsonResponse = `[${cleanJsonResponse}]`;
-                   } else {
+                   } else if (cleanJsonResponse.toLowerCase() === "[]" || cleanJsonResponse.toLowerCase() === "null" || cleanJsonResponse.trim() === "" ) {
+                       // Handle cases where LLM explicitly says no findings with empty array string
+                       console.log(`[LLM InsightInfo] LLM indicated no specific findings for ${sourceUrl}.`);
+                       return [];
+                   }
+                   else {
                        console.error(`[LLM InsightParseError] Cleaned response is not a JSON array for ${sourceUrl}. Cleaned Resp: ${cleanJsonResponse.slice(0,200)}`);
-                       return []; // Not a valid JSON array structure
+                       return [];
                    }
                }
                
@@ -465,7 +470,7 @@
      llmInsightExtractionCalls = 0; llmSummarizationCalls = 0; llmFilePredictionCalls = 0;
      let serperQueries = 0; let serperResultsProcessed = 0;
      let proxycurlCalls = 0;
-     dynamicallyUnsupportedFirecrawlSites.clear(); // Use the renamed Set
+     dynamicallyUnsupportedFirecrawlSites.clear();
    
      const { company_name, domain, owner_names=[] } = osintSpiderInputSchema.parse(rawInput);
      const companyCanon = company_name.toLowerCase()
@@ -479,16 +484,16 @@
    
      /*──── PHASE 1: SERPER BFS & Dorking ────*/
      console.log(`[OsintSpider] Phase 1: Starting SERPER BFS for "${companyCanon}"`);
-     const dorks = getTargetedDorksExpanded(companyCanon, domain, owner_names); // USING EXPANDED DORKS
+     const dorks = getTargetedDorksExpanded(companyCanon, domain, owner_names);
      const allSerpHitsWithDorkType: {hit: SerperOrganicResult, dorkType: string}[] = [];
      const initialHitLinks = new Set<string>();
    
-     for (const dorkInfo of dorks) { // dorks is now the expanded list
-       if (performance.now() - t0 > MAX_WALL_TIME_MS * 0.4 || serperQueries >= MAX_SERPER_CALLS) { // Increased time budget for SERP
+     for (const dorkInfo of dorks) {
+       if (performance.now() - t0 > MAX_WALL_TIME_MS * 0.4 || serperQueries >= MAX_SERPER_CALLS) {
            console.warn("[OsintSpider] Time or call budget for SERP phase reached. Stopping SERP queries.");
            break;
        }
-       console.log(`[OsintSpider] Serper Query (Type: ${dorkInfo.type}, Prio: ${dorkInfo.priority}): ${dorkInfo.query}`);
+       console.log(`[OsintSpider] Serper Query (Type: ${dorkInfo.type}, Prio: ${dorkInfo.priority}): ${truncateText(dorkInfo.query, 150)}`);
        try {
          const serperResponse = await postJSON<SerperResponse>(
            SERPER_API_URL,{q:dorkInfo.query,num:MAX_SERP_RESULTS_PER_PAGE,gl:"us",hl:"en"},{"X-API-KEY":SERPER_KEY!});
@@ -502,7 +507,7 @@
          });
        } catch (e:unknown) {
            const err = e instanceof Error ? e : new Error(String(e));
-           console.warn(`[OsintSpider] Serper call failed for dork "${dorkInfo.query}". Error: ${err.message}`);
+           console.warn(`[OsintSpider] Serper call failed for dork "${truncateText(dorkInfo.query,100)}". Error: ${err.message}`);
        }
      }
      serperResultsProcessed = allSerpHitsWithDorkType.length;
@@ -550,7 +555,7 @@
                    if(serperOwnerResp.organic && serperOwnerResp.organic.length > 0 && serperOwnerResp.organic[0].link) {
                        ownerSerpHit = serperOwnerResp.organic[0];
                        ownerLinkedInUrl = ownerSerpHit.link;
-                       if (!allSerpHitsWithDorkType.some(h => h.hit.link === ownerLinkedInUrl)) {
+                       if (ownerLinkedInUrl && !allSerpHitsWithDorkType.some(h => h.hit.link === ownerLinkedInUrl)) { // Check if URL is valid string
                            allSerpHitsWithDorkType.unshift({ hit: {...ownerSerpHit, snippet: ownerSerpHit.snippet || ownerSerpHit.title || "" }, dorkType: "ProxyCurl_Owner_Search"});
                        }
                    }
@@ -601,22 +606,22 @@
    
      for (const hit of prioritizedScrapingTargets) {
        if (performance.now() - firecrawlPhaseStartTime > FIRECRAWL_GLOBAL_BUDGET_MS ||
-           performance.now() - t0 > MAX_WALL_TIME_MS * 0.85) {
+           performance.now() - t0 > MAX_WALL_TIME_MS * 0.9) { // Adjusted to 90% to leave more time for final summaries
          console.warn("[OsintSpider] Time budget for Firecrawl/Insight Extraction phase reached. Stopping early.");
          break;
        }
    
        const citationNumber = citationsList.length + 1;
        citationsList.push({
-           marker:`[${citationNumber}]`, url:hit.link, title:hit.title,
+           marker:`[${citationNumber}]`, url:hit.link, title:hit.title || "Untitled", // Ensure title is not undefined
            snippet:truncateText(hit.snippet || hit.title || "", 250)
        });
    
        const isFile = hit.link.match(FILE_EXTENSIONS_REGEX);
        if (isFile) {
-           const predictedInterest = await predictFileInterest(hit.link, hit.title, hit.snippet || "", companyCanon);
+           const predictedInterest = await predictFileInterest(hit.link, hit.title || "Untitled", hit.snippet || "", companyCanon);
            filesForManualReviewList.push({
-               url: hit.link, title: hit.title, serpSnippet: hit.snippet || "",
+               url: hit.link, title: hit.title || "Untitled", serpSnippet: hit.snippet || "",
                predictedInterest, citationMarker: `[${citationNumber}]`
            });
            console.log(`[OsintSpider] File flagged: ${hit.link} - Interest: ${predictedInterest} ${`[${citationNumber}]`}`);
