@@ -7,7 +7,7 @@
    • prepareHtmlForClipboard() – strip links (except in <sup>) & give plain-text
    ------------------------------------------------------------------------ */
 
-   import type { SpiderPayload } from "@/lib/OsintSpiderV2";
+   import type { OsintSpiderPayload } from "@/lib/OsintSpiderV2";
 
    /* superscript injection -------------------------------------------------- */
    export function normalizeCitations(
@@ -28,7 +28,7 @@
    
    /* canonical renderer ----------------------------------------------------- */
    export function renderSpiderHtml(
-     data: SpiderPayload,
+     data: OsintSpiderPayload,
      opts: { showEmpty?: boolean } = {},
    ): string {
      const bulletHtml = (b: typeof data.sections[0]["bullets"][0]) =>
