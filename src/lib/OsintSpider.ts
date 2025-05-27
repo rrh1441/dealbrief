@@ -53,7 +53,7 @@
    const MAX_TOKENS_FOR_INSIGHT_EXTRACTION_IN   = 7000;
    const MAX_TOKENS_FOR_INSIGHT_EXTRACTION_OUT  = 1000;
    const MAX_TOKENS_FOR_FILE_PREDICTION_OUT     = 150;
-   const MAX_SOURCES_TO_LLM                     = 30;
+   // const MAX_SOURCES_TO_LLM                     = 30;
    
    const SECTIONS = [
      "Corporate",
@@ -212,8 +212,9 @@
        const txt=r.choices[0]?.message?.content||"";
        totalLlmOut += r.usage?.completion_tokens ?? estimateTokens(txt);
        return txt.trim();
-     }catch(e:any){
-       console.error("[LLM] error",e.message);
+     }catch(e:unknown){
+       const err = e instanceof Error ? e : new Error(String(e));
+       console.error("[LLM] error",err.message);
        return null;
      }
    }
@@ -275,8 +276,9 @@
          if(resp.success) return FIRECRAWL_SKIPPED;
          if(permanentFail(resp.status,resp.error) && host) dynamicNoScrape.add(host);
          return null;
-       }catch(e:any){
-         if(permanentFail(undefined,e.message) && host) dynamicNoScrape.add(host);
+       }catch(e:unknown){
+         const err = e instanceof Error ? e : new Error(String(e));
+         if(permanentFail(undefined,err.message) && host) dynamicNoScrape.add(host);
          return null;
        }
      };
@@ -418,7 +420,7 @@
    
    /*──────────────── FILE-interest predictor ──────────────*/
    async function predictFileInterest(
-     url:string,title:string,snippet:string,canon:string){
+     url:string,title:string,snippet:string){
      llmFileCalls++;
      const prompt = `File URL: ${url}\nTitle:${title}\nSnippet:${snippet}\nDescribe potential due-diligence interest (short).`;
      return (await callLlm(prompt,"You are an analyst.",
@@ -443,7 +445,7 @@
        .replace(/[.,']/g,"").trim();
    
      const bulletsBySection:Record<SectionName,ReportBullet[]> =
-       SECTIONS.reduce((a,s)=>({...a,[s]:[]}),{} as any);
+       SECTIONS.reduce((a,s)=>({...a,[s]:[]}),{} as Record<SectionName,ReportBullet[]>);
    
      const citations: Citation[] = [];
      const filesForManualReview: FileForManualReview[] = [];
@@ -451,7 +453,7 @@
    
      /* ensure vars declared before use (lint fixes) */
      let prioritizedScrapingTargets: PrioritizedSerpResult[] = [];
-     let sectionsOutput: SectionOutput[] = [];
+     const sectionsOutput: SectionOutput[] = [];
      let executiveSummary = "";
    
      /*──────────────── PHASE 1 — SERPER ────────────────*/
@@ -531,7 +533,7 @@
        if(FILE_EXT_REGEX.test(hit.link)){
          filesForManualReview.push({
            url:hit.link,title:hit.title||"Untitled",serpSnippet:hit.snippet||"",
-           predictedInterest:await predictFileInterest(hit.link,hit.title||"Untitled",hit.snippet||"",canon),
+           predictedInterest:await predictFileInterest(hit.link,hit.title||"Untitled",hit.snippet||""),
            citationMarker});
          continue;
        }
