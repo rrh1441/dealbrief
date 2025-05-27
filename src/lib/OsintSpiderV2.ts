@@ -28,10 +28,10 @@
    
    const MAX_SERPER_CALLS   = 600;
    const MAX_SERP_RESULTS_PER_PAGE = 10;
-   const MAX_FIRECRAWL_TARGETS     = 50; // Max URLs to *attempt* to Firecrawl after prioritization
+   const MAX_FIRECRAWL_TARGETS     = 50;
    const MAX_PROXYCURL_CALLS     = 10;
-   const FIRECRAWL_BATCH_SIZE   = 5;   // Smaller batch size for more intensive processing per URL potentially
-   const FIRECRAWL_GLOBAL_BUDGET_MS = 300 * 1000; // 5 minutes for Firecrawl operations
+   // const FIRECRAWL_BATCH_SIZE   = 5; // Unused in current logic, firecrawlWithLogging is per URL
+   const FIRECRAWL_GLOBAL_BUDGET_MS = 300 * 1000;
    const MAX_WALL_TIME_MS      = 12 * 60 * 1000; // Approx 12 minutes total, leaving time for LLMs post-crawling (Vercel limit 720s)
    
    const LLM_MODEL_INSIGHT_EXTRACTION = "gpt-4o-mini";
@@ -42,12 +42,12 @@
    type SectionName = typeof SECTIONS[number];
    
    const MAX_BULLETS_PER_SECTION  = 50; // Reduced for higher quality focus
-   const MAX_BULLET_LENGTH  = 500; // Allow slightly longer if LLM generated
+   const MAX_BULLET_LENGTH  = 500;
    const MAX_TOKENS_EXEC_SUMMARY    = 300;
    const MAX_TOKENS_SECTION_SUMMARY = 160;
-   const MAX_TOKENS_FOR_INSIGHT_EXTRACTION_INPUT = 7000; // Max input tokens for page analysis (gpt-4o-mini context is large)
+   const MAX_TOKENS_FOR_INSIGHT_EXTRACTION_INPUT = 7000;
    const MAX_TOKENS_FOR_INSIGHT_EXTRACTION_OUTPUT = 1000;
-   const MAX_TOKENS_FOR_FILE_PREDICTION_INPUT = 1000; // Snippet + title
+   // const MAX_TOKENS_FOR_FILE_PREDICTION_INPUT = 1000; // Unused in predictFileInterest callLlmApi
    const MAX_TOKENS_FOR_FILE_PREDICTION_OUTPUT = 150;
    
    const MAX_SOURCES_TO_LLM = 30; // Max sources to consider for LLM processing to manage token count
@@ -91,8 +91,8 @@
    }
    
    interface ProxyCurlProfileResult { headline?:string; [key: string]: unknown; }
-   interface ProxyCurlCompanyResult { industry?:string; founded_year?:number; experiences?: LinkedInExperience[]; [key: string]: unknown; } // Added experiences
-   interface YearMonthDay { year?: number; month?: number; day?: number } // Added
+   interface ProxyCurlCompanyResult { industry?:string; founded_year?:number; experiences?: LinkedInExperience[]; [key: string]: unknown; }
+   interface YearMonthDay { year?: number; month?: number; day?: number } 
    interface LinkedInExperience { company?: string; title?: string; starts_at?: YearMonthDay; ends_at?: YearMonthDay } // Added
    
    
@@ -128,7 +128,7 @@
    });
    
    /*──────────────────────── HELPERS ───────────────────────*/
-   const sha256 = (s:string):string => createHash("sha256").update(s).digest("hex");
+   // const sha256 = (s:string):string => createHash("sha256").update(s).digest("hex"); // Unused
    const truncateText  = (s:string,n:number):string => (s || "").length<=n? (s || "") : (s || "").slice(0,n-1)+"…";
    const estimateTokens = (s:string):number => Math.ceil((s || "").length / 3.5);
    
@@ -501,7 +501,7 @@
    
      /*──── PHASE 3: Firecrawl & Insight Extraction / File Flagging ────*/
      console.log(`[OsintSpiderV4] Phase 3: Starting Firecrawl & Insight Extraction for ${prioritizedScrapingTargets.length} targets.`);
-     let firecrawlWallTimeStart = performance.now();
+     const firecrawlWallTimeStart = performance.now(); // Correctly const if not reassigned
    
      for (const hit of prioritizedScrapingTargets) {
        if (performance.now() - firecrawlWallTimeStart > FIRECRAWL_GLOBAL_BUDGET_MS ||
@@ -585,6 +585,7 @@
            .join("\n");
    
        const summaryPrompt = `You are a due diligence analyst summarizing findings for the "${sectionName}" section regarding "${companyCanon}".
+   This section has ${criticalCount} CRITICAL and ${highCount} HIGH priority findings out of ${currentBullets.length} total.
    Based ONLY on the following findings (max 15 shown), write a concise summary of 2-4 sentences.
    Focus on the most impactful information. Mention counts of CRITICAL/HIGH findings if relevant and significant (e.g., "Several high-risk items were noted...").
    Do not invent facts, speculate, or offer advice.
@@ -635,7 +636,7 @@
      const costBreakdown={
        serper: serperQueries * 0.001, // Assume $1/1k queries
        firecrawl: firecrawlGlobalSuccesses * 0.002, // Assume $2/1k successful scrapes with some content
-       proxycurl: proxycurlCalls * 0.01,
+       proxycurl: 0, // Explicitly set to 0 as it's not used but present in stats type
        llm: +finalLlmCost.toFixed(4),
        total: 0,
      };
@@ -659,7 +660,8 @@
            pagesForDeepAnalysis: pagesForDeepAnalysisCount,
            llmInsightExtractionCalls, llmSummarizationCalls, llmFilePredictionCalls,
            totalLlmInputTokens, totalLlmOutputTokens,
-           proxycurlCalls, wallTimeSeconds: parseFloat(wallTimeSeconds.toFixed(1))
+           proxycurlCalls,
+           wallTimeSeconds: parseFloat(wallTimeSeconds.toFixed(1))
        }
      };
    }

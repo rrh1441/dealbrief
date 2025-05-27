@@ -7,8 +7,8 @@
  * -----------------------------------------------------------------*/
 
 import { NextRequest, NextResponse } from "next/server";
-import { runOsintSpider } from "@/lib/OsintSpiderV2";
-import { renderSpiderHtml } from "@/lib/renderSpiderHtml";
+import { runOsintSpiderV4, OsintSpiderPayloadV4 } from "@/lib/OsintSpiderV2";
+import { renderSpiderHtmlV4 } from "@/lib/renderSpiderHtml";
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,21 +26,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    /* ── run OSINT-Spider-V2 ────────────────────────────────────────── */
-    const spider = await runOsintSpider({
+    /* ── run OSINT-Spider-V4 ────────────────────────────────────────── */
+    const spiderPayload: OsintSpiderPayloadV4 = await runOsintSpiderV4({
       company_name: companyName,
       domain:       companyDomain,
       owner_names:  leaderName ? [leaderName] : [],
     });
 
     /* ── generate foot-noted HTML ───────────────────────────────────── */
-    const briefHtml = renderSpiderHtml(spider);
+    const briefHtml = renderSpiderHtmlV4(spiderPayload);
 
     /* ── respond ────────────────────────────────────────────────────── */
     return NextResponse.json({
       brief: briefHtml,
-      citations: spider.citations,
-      cost: spider.cost,
+      citations: spiderPayload.citations,
+      cost: spiderPayload.cost,
+      filesForManualReview: spiderPayload.filesForManualReview,
+      stats: spiderPayload.stats
     });
   } catch (err) {
     console.error(err);
