@@ -484,12 +484,12 @@ export async function runSpider(raw: unknown): Promise<SpiderPayload> {
       if (sim > 0.75) return true;
 
       // Phone number repetition check
-      const newPhones = newClean.match(RE_PHONE) ?? [];
-      const existPhones = exist.match(RE_PHONE) ?? [];
+      const newPhones = (newClean.match(RE_PHONE) ?? []) as string[];
+      const existPhones = (exist.match(RE_PHONE) ?? []) as string[];
       if (
-        newPhones.length &&
-        existPhones.length &&
-        newPhones.some(p => existPhones.includes(p)) &&
+        newPhones.length > 0 &&
+        existPhones.length > 0 &&
+        newPhones.some(p => (existPhones as string[]).includes(p)) &&
         sim > 0.5
       ) {
         return true;
