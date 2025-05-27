@@ -30,7 +30,7 @@ const MAX_SERPER_CALLS   = 600;
 const MAX_SERP_RESULTS_PER_PAGE = 10;
 const MAX_FIRECRAWL_TARGETS     = 50;
 const MAX_PROXYCURL_CALLS     = 10;
-const FIRECRAWL_BATCH_SIZE   = 5;
+// const FIRECRAWL_BATCH_SIZE   = 5; // Currently unused
 const FIRECRAWL_GLOBAL_BUDGET_MS = 300 * 1000;
 const MAX_WALL_TIME_MS      = 12 * 60 * 1000;
 
@@ -58,14 +58,14 @@ interface ExtractedInsight {
     categorySuggestion: SectionName; severitySuggestion: Severity;
     sourceUrl: string; citationMarker?: string;
 }
-interface ReportBullet {
+export interface ReportBullet {
     text: string; quote?: string; sourceUrl: string;
     citationMarker: string; severity: Severity;
     origin: 'llm_insight' | 'heuristic_snippet' | 'file_placeholder' | 'proxycurl_summary';
     llmSuggestedCategory?: SectionName;
 }
-interface SectionOutput  { name:SectionName; summary:string; bullets:ReportBullet[] }
-interface Citation { marker:string; url:string; title:string; snippet:string }
+export interface SectionOutput  { name:SectionName; summary:string; bullets:ReportBullet[] }
+export interface Citation { marker:string; url:string; title:string; snippet:string }
 
 interface SerperOrganicResult { title:string; link:string; snippet?:string; position?: number; }
 interface SerperResponse    { organic?:SerperOrganicResult[] }
@@ -99,7 +99,7 @@ interface ProxyCurlCompanyResult extends ProxyCurlCommon {
     headquarters?: { city: string; state: string; country: string; };
 }
 
-interface FileForManualReview {
+export interface FileForManualReview {
     url: string; title: string; serpSnippet: string;
     predictedInterest: string; citationMarker: string;
 }
@@ -487,16 +487,16 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
                 }
                 console.log(`[OsintSpider] Enriched company profile: ${companyLinkedInHit.link}`);
             }
-        } catch (e: unknown) { /* error logged by postJSON */ }
+                 } catch { /* error logged by postJSON */ }
     }
 
     const ownersToEnrich = owner_names.slice(0, Math.min(3, MAX_PROXYCURL_CALLS - proxycurlCalls));
     for (const ownerName of ownersToEnrich) {
         if (proxycurlCalls >= MAX_PROXYCURL_CALLS) break;
         let ownerLinkedInUrl: string | undefined;
-        let ownerSerpHitObj = allSerpHitsWithDorkType.find(({hit}) =>
-            hit.link.includes("linkedin.com/in/") && ( (hit.title||"").toLowerCase().includes(ownerName.toLowerCase()) || (hit.snippet||"").toLowerCase().includes(ownerName.toLowerCase()))
-        );
+                 const ownerSerpHitObj = allSerpHitsWithDorkType.find(({hit}) =>
+             hit.link.includes("linkedin.com/in/") && ( (hit.title||"").toLowerCase().includes(ownerName.toLowerCase()) || (hit.snippet||"").toLowerCase().includes(ownerName.toLowerCase()))
+         );
         let ownerSerpHit: SerperOrganicResult | undefined = ownerSerpHitObj?.hit;
 
         if (!ownerSerpHit) {
@@ -512,7 +512,7 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
                         allSerpHitsWithDorkType.unshift({ hit: {...ownerSerpHit, snippet: ownerSerpHit.snippet || ownerSerpHit.title || "" }, dorkType: "ProxyCurl_Owner_Search"});
                     }
                 }
-            } catch (e:unknown) { /* error logged by postJSON */ }
+                         } catch { /* error logged by postJSON */ }
         } else {
             ownerLinkedInUrl = ownerSerpHit.link;
         }
