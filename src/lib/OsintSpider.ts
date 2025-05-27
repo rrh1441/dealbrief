@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────────────────────
-   src/lib/OsintSpiderV4.ts (Significant Refactor for Insight Extraction)
+   src/lib/OsintSpider.ts (Refactor for Insight Extraction)
    --------------------------------------------------------------------------
    Web-only due diligence with enhanced Firecrawl, ProxyCurl, and LLM-driven insight extraction.
    ------------------------------------------------------------------------ */
@@ -30,7 +30,7 @@ const MAX_SERPER_CALLS   = 600;
 const MAX_SERP_RESULTS_PER_PAGE = 10;
 const MAX_FIRECRAWL_TARGETS     = 50;
 const MAX_PROXYCURL_CALLS     = 10;
-// const FIRECRAWL_BATCH_SIZE   = 5; // Commented out as it's not directly used by firecrawlWithLogging logic
+const FIRECRAWL_BATCH_SIZE   = 5;
 const FIRECRAWL_GLOBAL_BUDGET_MS = 300 * 1000;
 const MAX_WALL_TIME_MS      = 12 * 60 * 1000;
 
@@ -58,14 +58,14 @@ interface ExtractedInsight {
     categorySuggestion: SectionName; severitySuggestion: Severity;
     sourceUrl: string; citationMarker?: string;
 }
-export interface ReportBullet {
+interface ReportBullet {
     text: string; quote?: string; sourceUrl: string;
     citationMarker: string; severity: Severity;
     origin: 'llm_insight' | 'heuristic_snippet' | 'file_placeholder' | 'proxycurl_summary';
-    llmSuggestedCategory?: SectionName; // ADDED
+    llmSuggestedCategory?: SectionName;
 }
-export interface SectionOutput  { name:SectionName; summary:string; bullets:ReportBullet[] }
-export interface Citation { marker:string; url:string; title:string; snippet:string }
+interface SectionOutput  { name:SectionName; summary:string; bullets:ReportBullet[] }
+interface Citation { marker:string; url:string; title:string; snippet:string }
 
 interface SerperOrganicResult { title:string; link:string; snippet?:string; position?: number; }
 interface SerperResponse    { organic?:SerperOrganicResult[] }
@@ -99,11 +99,11 @@ interface ProxyCurlCompanyResult extends ProxyCurlCommon {
     headquarters?: { city: string; state: string; country: string; };
 }
 
-export interface FileForManualReview {
+interface FileForManualReview {
     url: string; title: string; serpSnippet: string;
     predictedInterest: string; citationMarker: string;
 }
-export interface OsintSpiderPayload {
+export interface OsintSpiderPayload { // RENAMED from OsintSpiderPayloadV4
   company:string; domain:string; generated:string;
   summary:string; sections:SectionOutput[]; citations:Citation[];
   filesForManualReview: FileForManualReview[];
@@ -186,9 +186,9 @@ let firecrawlGlobalAttempts = 0; let firecrawlGlobalSuccesses = 0;
 const unsupportedFirecrawlSites = new Set<string>();
 
 const firecrawlWithLogging = async (url: string, attemptInfoForLogs: string): Promise<string | null> => {
-  const urlHostname = (() => { try { return new URL(url).hostname; } catch { return ""; } })();
+  const urlHostname = (() => { try { return new URL(url).hostname.replace(/^www\./,''); } catch { return ""; } })();
   if (urlHostname && unsupportedFirecrawlSites.has(urlHostname)) {
-    console.log(`[Firecrawl Skip] ${attemptInfoForLogs} - URL: ${url} - Host previously flagged unsupported.`);
+    console.log(`[Firecrawl Skip] ${attemptInfoForLogs} - URL: ${url} - Hostname '${urlHostname}' previously flagged as unsupported.`);
     return null;
   }
   firecrawlGlobalAttempts++;
@@ -212,7 +212,7 @@ const firecrawlWithLogging = async (url: string, attemptInfoForLogs: string): Pr
         console.error(`[Firecrawl API Error] ${attemptInfoForLogs} - URL: ${url}. Error: ${response.error || 'Unknown Firecrawl error'}. Status: ${response.status || 'N/A'}`);
         if (response.status === 403 && response.error?.includes("website is no longer supported")) {
           if (urlHostname) unsupportedFirecrawlSites.add(urlHostname);
-          console.warn(`[Firecrawl Unsupported] Added ${urlHostname} to dynamic no-scrape list for this run.`);
+          console.warn(`[Firecrawl Unsupported] Added '${urlHostname}' to dynamic no-scrape list for this run.`);
           return "SITE_UNSUPPORTED_BY_FIRECRAWL";
         }
       } else console.warn(`[Firecrawl NoContentOrOddResponse] ${attemptInfoForLogs} - URL: ${url}. Resp: ${JSON.stringify(response).slice(0,300)}`);
@@ -221,7 +221,7 @@ const firecrawlWithLogging = async (url: string, attemptInfoForLogs: string): Pr
       const err = error instanceof Error ? error : new Error(String(error));
       if (err.message.includes("HTTP 403") && err.message.includes("website is no longer supported")) {
           if (urlHostname) unsupportedFirecrawlSites.add(urlHostname);
-          console.warn(`[Firecrawl Unsupported via Exception] Added ${urlHostname} to dynamic no-scrape list. Error: ${err.message}`);
+          console.warn(`[Firecrawl Unsupported via Exception] Added '${urlHostname}' to dynamic no-scrape list. Error: ${err.message}`);
           return "SITE_UNSUPPORTED_BY_FIRECRAWL";
       }
       console.error(`[Firecrawl Exception] ${attemptInfoForLogs} - URL: ${url}, Timeout: ${timeoutMs}ms. Error: ${err.message}`);
@@ -229,6 +229,8 @@ const firecrawlWithLogging = async (url: string, attemptInfoForLogs: string): Pr
     }
   };
   let content = await tryScrapeOnce(15000);
+  if (content === "SITE_UNSUPPORTED_BY_FIRECRAWL") return null;
+
   if (content === null) {
     console.warn(`[Firecrawl Retry] First attempt failed for ${url} (${attemptInfoForLogs}). Retrying.`);
     content = await tryScrapeOnce(25000);
@@ -244,34 +246,52 @@ const FILE_EXTENSIONS_REGEX = /\.(pdf|xlsx?|docx?|csv|txt|log|sql|bak|zip|tar\.g
 const scoreSerpResultInitial = (r:SerperOrganicResult, domain:string, targetedKeywords: string[] = []):number => {
   let s=0.1; const snippet = (r.snippet || "").toLowerCase(); const title = (r.title || "").toLowerCase();
   if(r.link.includes(domain)) s+=0.2;
-  if (targetedKeywords.some(kw => snippet.includes(kw.toLowerCase()) || title.includes(kw.toLowerCase()))) s += 0.3;
+  if (targetedKeywords.some(kw => snippet.includes(kw) || title.includes(kw))) s += 0.3;
   if(RISK_WORDS_OS.test(snippet) || RISK_WORDS_OS.test(title)) s+=0.25;
   if(r.link.match(FILE_EXTENSIONS_REGEX)) s += 0.1;
-  if(r.link.includes("sec.gov") || r.link.includes("courtlistener.com") || r.link.includes("pacer.gov")) s += 0.2;
-  if(r.link.includes("news.") || r.link.includes("/news") || r.link.includes("prnewswire")) s += 0.15;
+  if(r.link.includes("sec.gov") || r.link.includes("courtlistener.com") || r.link.includes("pacer.gov") || r.link.includes("justice.gov")) s += 0.2;
+  if(r.link.includes("news.") || r.link.includes("/news") || r.link.includes("prnewswire") || r.link.includes("reuters.com") || r.link.includes("bloomberg.com") || r.link.includes("wsj.com")) s += 0.15;
   return Math.min(1.0, s);
 };
 
-/*──────────────────────── NEW TARGETED DORKS ──────────────────────────*/
+/*──────────────────────── NEW TARGETED DORKS (Simplified Complex ORs) ─────*/
 const getTargetedDorks = (companyCanon: string, domain: string, ownerNames: string[] = []) => {
   const dorks: {query: string, type: string, priority: number}[] = [
-    { query: `"${companyCanon}" OR "${domain}" (lawsuit OR litigation OR "court case" OR "legal action" OR settlement OR "class action")`, type: "Legal", priority: 10 },
-    { query: `"${companyCanon}" OR "${domain}" site:sec.gov OR (("sec filing" OR "10-K" OR "10-Q" OR "form 4"))`, type: "Financials", priority: 10 },
-    { query: `"${companyCanon}" (fine OR penalty OR sanction OR "regulatory action" OR investigation)`, type: "Legal", priority: 9 },
-    { query: `"${domain}" OR "${companyCanon}" ("data breach" OR "cyber attack" OR "hacked" OR "vulnerability disclosed" OR "security incident" OR "ransomware")`, type: "Cyber", priority: 10 },
-    { query: `"${domain}" ("exposed database" OR "leaked credentials" OR "api key leak")`, type: "Cyber", priority: 9 },
-    { query: `site:pastebin.com OR site:ghostbin.com OR site:plaintext.in "${domain}" OR "${companyCanon}"`, type: "Cyber", priority: 8 },
-    { query: `site:github.com ("${domain}" OR "${companyCanon}") (password OR secret OR apikey OR "config leak" OR "database dump")`, type: "Cyber", priority: 8 },
-    { query: `"${companyCanon}" (scandal OR controversy OR fraud OR misconduct OR unethical OR protest OR boycott OR "consumer complaints")`, type: "Reputation", priority: 9 },
-    { query: `"${companyCanon}" reviews (complaint OR "negative feedback" OR "poor service" OR issue OR problem OR "1 star") -site:${domain}`, type: "Reputation", priority: 8 },
-    { query: `"${companyCanon}" ("acquisition of" OR "merger with" OR "acquired by" OR "invested in" OR "partnership with" OR "joint venture")`, type: "Corporate", priority: 7 },
-    { query: `"${companyCanon}" (financial results OR earnings OR "annual report" OR "investor relations" OR "funding round") filetype:pdf`, type: "Financials", priority: 7 },
-    { query: `"${companyCanon}" (layoffs OR "restructuring" OR "chapter 11" OR bankruptcy OR insolvency OR "store closures")`, type: "Corporate", priority: 8 },
+    // High Priority - Legal & Regulatory
+    { query: `("${companyCanon}" OR "${domain}") ("lawsuit" OR "litigation" OR "court case")`, type: "Legal", priority: 10 },
+    { query: `("${companyCanon}" OR "${domain}") ("legal action" OR "settlement" OR "class action")`, type: "Legal", priority: 10 },
+    { query: `("${companyCanon}" OR "${domain}") (site:sec.gov OR "sec filing" OR "10-K" OR "10-Q" OR "form 4")`, type: "Financials", priority: 10 },
+    { query: `"${companyCanon}" ("fine" OR "penalty" OR "sanction" OR "regulatory action" OR "investigation")`, type: "Legal", priority: 9 },
+
+    // High Priority - Cyber & Data Breaches
+    { query: `("${domain}" OR "${companyCanon}") ("data breach" OR "cyber attack" OR "hacked")`, type: "Cyber", priority: 10 },
+    { query: `("${domain}" OR "${companyCanon}") ("vulnerability disclosed" OR "security incident" OR "ransomware")`, type: "Cyber", priority: 10 },
+    { query: `("${domain}" OR "${companyCanon}") ("exposed database" OR "leaked credentials" OR "api key leak")`, type: "Cyber", priority: 9 },
+    
+    { query: `site:pastebin.com ("${domain}" OR "${companyCanon}")`, type: "Cyber", priority: 8 },
+    { query: `site:ghostbin.com ("${domain}" OR "${companyCanon}")`, type: "Cyber", priority: 8 },
+    { query: `site:plaintext.in ("${domain}" OR "${companyCanon}")`, type: "Cyber", priority: 8 },
+    
+    { query: `site:github.com ("${domain}" OR "${companyCanon}") ("password" OR "secret" OR "apikey")`, type: "Cyber", priority: 8 },
+    { query: `site:github.com ("${domain}" OR "${companyCanon}") ("config leak" OR "database dump")`, type: "Cyber", priority: 8 },
+    
+    // High Priority - Negative Reputation
+    { query: `"${companyCanon}" ("scandal" OR "controversy" OR "fraud" OR "misconduct" OR "unethical")`, type: "Reputation", priority: 9 },
+    { query: `"${companyCanon}" ("protest" OR "boycott" OR "consumer complaints")`, type: "Reputation", priority: 9 },
+    { query: `"${companyCanon}" reviews ("complaint" OR "negative feedback" OR "poor service" OR "issue" OR "problem" OR "1 star") -site:${domain}`, type: "Reputation", priority: 8 },
+    
+    // Corporate & Financials
+    { query: `"${companyCanon}" ("acquisition of" OR "merger with" OR "acquired by")`, type: "Corporate", priority: 7 },
+    { query: `"${companyCanon}" ("invested in" OR "partnership with" OR "joint venture")`, type: "Corporate", priority: 7 },
+    { query: `"${companyCanon}" ("financial results" OR "earnings" OR "annual report" OR "investor relations" OR "funding round") filetype:pdf`, type: "Financials", priority: 7 },
+    { query: `"${companyCanon}" ("layoffs" OR "restructuring" OR "chapter 11" OR "bankruptcy" OR "insolvency" OR "store closures")`, type: "Corporate", priority: 8 },
+    
+    // Broader discovery
     { query: `"${companyCanon}"`, type: "Corporate", priority: 5 },
     { query: `"${companyCanon}" site:${domain}`, type: "Corporate", priority: 4 },
   ];
   ownerNames.forEach(owner => {
-    dorks.push({ query: `"${owner}" "${companyCanon}" (fraud OR lawsuit OR investigation OR scandal OR controversy OR "insider trading")`, type: "Leadership", priority: 9 });
+    dorks.push({ query: `"${owner}" "${companyCanon}" ("fraud" OR "lawsuit" OR "investigation" OR "scandal" OR "controversy" OR "insider trading")`, type: "Leadership", priority: 9 });
     dorks.push({ query: `"${owner}" "${companyCanon}"`, type: "Leadership", priority: 6 });
   });
   return dorks;
@@ -285,13 +305,16 @@ interface PrioritizedSerpResult extends SerperOrganicResult {
 }
 
 function selectTopScrapingTargets(
-    allSerpHitsWithDorkTypeInput: {hit: SerperOrganicResult, dorkType: string}[], // CORRECTED PARAMETER TYPE
-    companyCanon: string, domain: string, // companyCanon not used here currently, but kept for potential future use
+    allSerpHitsWithDorkTypeInput: {hit: SerperOrganicResult, dorkType: string}[],
+    companyCanon: string, domain: string,
     maxTargets: number
 ): PrioritizedSerpResult[] {
     const scoredWithDetails: PrioritizedSerpResult[] = [];
+    const riskKeywords = (typeof RISK_WORDS_OS.source === 'string')
+        ? RISK_WORDS_OS.source.replace(/\\b/g, '').split('|').map(s => s.trim().toLowerCase()).filter(Boolean)
+        : [];
 
-    allSerpHitsWithDorkTypeInput.forEach(({hit, dorkType}) => { // Use the corrected input
+    allSerpHitsWithDorkTypeInput.forEach(({hit, dorkType}) => {
         let priority = 1;
         const snippet = (hit.snippet || "").toLowerCase();
         const title = (hit.title || "").toLowerCase();
@@ -304,7 +327,6 @@ function selectTopScrapingTargets(
         if (link.includes("news.") || link.includes("/news") || link.includes("reuters.com") || link.includes("bloomberg.com") || link.includes("wsj.com")) priority +=3;
         if (link.includes(domain) && !(link.includes("/blog") || link.includes("/news") || link.includes("/press"))) priority -=2;
 
-        const riskKeywords = RISK_WORDS_OS.source ? RISK_WORDS_OS.source.split('|').map(s => s.replace(/[^\w\s]/gi, '').trim()).filter(Boolean) : [];
         const currentInitialScore = scoreSerpResultInitial(hit, domain, riskKeywords);
         scoredWithDetails.push({
             ...hit,
@@ -325,7 +347,7 @@ async function extractInsightsFromPage(
     domain: string, ownerNames: string[] = []
 ): Promise<ExtractedInsight[]> {
     llmInsightExtractionCalls++;
-    const systemMessage = `You are an expert OSINT analyst extracting actionable due diligence insights about "${companyCanon}" from web page text. Focus on factual statements, potential risks, or significant corporate information. Be objective.`;
+    const systemMessage = `You are an expert OSINT analyst tasked with extracting actionable due diligence insights about "${companyCanon}" from provided web page text. Focus on factual statements, potential risks, or significant corporate information. Be objective.`;
     const prompt = `
 CONTEXT: Text from URL: ${sourceUrl}. Analysis for: "${companyCanon}" (domain: ${domain}). Owners/key personnel: ${ownerNames.join(", ") || "N/A"}.
 
@@ -336,34 +358,44 @@ ${truncateText(fullText, MAX_TOKENS_FOR_INSIGHT_EXTRACTION_INPUT * 3.5)}
 INSTRUCTIONS:
 Based ONLY on TEXT_TO_ANALYZE:
 1. Identify up to 5 distinct, specific, actionable due diligence findings for "${companyCanon}".
-2. For each, provide:
+2. For each finding, provide:
     a. "insightStatement": Concise summary of the finding (1-2 sentences). Must directly relate to "${companyCanon}".
-    b. "supportingQuote": Brief, EXACT quote from text supporting the statement (max 60 words). If no direct quote, describe the evidence.
+    b. "supportingQuote": Brief, EXACT quote from text supporting the statement (max 60 words). If no direct quote, describe the evidence from the text.
     c. "categorySuggestion": Suggest the most appropriate category from this list: ${SECTIONS.join(", ")}.
     d. "severitySuggestion": Suggest a severity from this list: CRITICAL, HIGH, MEDIUM, LOW, INFO. Base this on potential impact.
 3. If no specific due diligence findings are present, return an empty array.
-4. Format your entire response as a JSON array of finding objects. Example: [{"insightStatement":"...", "supportingQuote":"...", "categorySuggestion":"Legal", "severitySuggestion":"HIGH", "sourceUrl":"${sourceUrl}"}]
-   Ensure valid JSON. Do not include any explanatory text outside the JSON structure.`;
+4. Format your entire response as a valid JSON array of finding objects. Example of a single object: {"insightStatement":"...", "supportingQuote":"...", "categorySuggestion":"Legal", "severitySuggestion":"HIGH", "sourceUrl":"${sourceUrl}"}
+   Ensure the entire response is ONLY the JSON array. Do not include any explanatory text, apologies, or markdown backticks (like \`\`\`json or \`\`\`) around the JSON.`;
 
     const llmResponse = await callLlmApi(prompt, systemMessage, LLM_MODEL_INSIGHT_EXTRACTION, MAX_TOKENS_FOR_INSIGHT_EXTRACTION_OUTPUT, 0.1);
+
     if (llmResponse) {
         try {
-            const parsedUnknown: unknown = JSON.parse(llmResponse); // Parse to unknown
-            if (Array.isArray(parsedUnknown)) { // Check if it's an array
-                const parsed = parsedUnknown as Partial<ExtractedInsight>[]; // Cast to array of partial insights
+            let cleanJsonResponse = llmResponse.trim();
+            // Remove markdown fences if present more robustly
+            const jsonMatch = cleanJsonResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+            if (jsonMatch && jsonMatch[1]) {
+                cleanJsonResponse = jsonMatch[1].trim();
+            } else if (cleanJsonResponse.startsWith("```") && cleanJsonResponse.endsWith("```")) {
+                cleanJsonResponse = cleanJsonResponse.substring(3, cleanJsonResponse.length - 3).trim();
+            }
+            
+            const parsedUnknown: unknown = JSON.parse(cleanJsonResponse);
+            if (Array.isArray(parsedUnknown)) {
+                const parsed = parsedUnknown as Partial<ExtractedInsight>[];
                 return parsed.map(p => ({
                     insightStatement: p.insightStatement || "N/A",
                     supportingQuote: p.supportingQuote,
                     categorySuggestion: SECTIONS.includes(p.categorySuggestion as SectionName) ? p.categorySuggestion as SectionName : "Misc",
                     severitySuggestion: ["CRITICAL","HIGH","MEDIUM","LOW","INFO"].includes(p.severitySuggestion as Severity) ? p.severitySuggestion as Severity : "INFO",
-                    sourceUrl: sourceUrl, // Already have sourceUrl from function param
+                    sourceUrl: sourceUrl,
                 })).filter(p => p.insightStatement !== "N/A");
             } else {
-                 console.error(`[LLM InsightParseError] Expected array, got ${typeof parsedUnknown} for ${sourceUrl}. LLM Response: ${llmResponse.slice(0,200)}`);
+                 console.error(`[LLM InsightParseError] Expected array, got ${typeof parsedUnknown} for ${sourceUrl}. Cleaned LLM Response: ${cleanJsonResponse.slice(0,200)}`);
             }
         } catch (e: unknown) {
             const err = e instanceof Error ? e : new Error(String(e));
-            console.error(`[LLM InsightParseError] Failed to parse insights for ${sourceUrl}. Error: ${err.message}. LLM Response: ${llmResponse.slice(0,500)}`);
+            console.error(`[LLM InsightParseError] Failed to parse insights for ${sourceUrl}. Error: ${err.message}. Original LLM Response: ${llmResponse.slice(0,500)}`);
         }
     }
     return [];
@@ -386,14 +418,14 @@ Be brief (1 phrase/sentence). If interest is unclear, state "Unclear interest fr
     return prediction || "Prediction failed or unclear interest.";
 }
 
-/*──────────────────────── MAIN OsintSpiderV4 Function ──────────────────────*/
-export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayload>{
+/*──────────────────────── MAIN OsintSpider Function ──────────────────────*/
+export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayload>{ // RENAMED
   const t0 = performance.now();
   firecrawlGlobalAttempts = 0; firecrawlGlobalSuccesses = 0;
   totalLlmInputTokens = 0; totalLlmOutputTokens = 0;
   llmInsightExtractionCalls = 0; llmSummarizationCalls = 0; llmFilePredictionCalls = 0;
   let serperQueries = 0; let serperResultsProcessed = 0;
-  let proxycurlCalls = 0; // Now used
+  let proxycurlCalls = 0;
   unsupportedFirecrawlSites.clear();
 
   const { company_name, domain, owner_names=[] } = osintSpiderInputSchema.parse(rawInput);
@@ -407,14 +439,14 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
   const processedUrlsForDeepAnalysis = new Set<string>();
 
   /*──── PHASE 1: SERPER BFS & Dorking ────*/
-  console.log(`[OsintSpiderV4] Phase 1: Starting SERPER BFS for "${companyCanon}"`);
+  console.log(`[OsintSpider] Phase 1: Starting SERPER BFS for "${companyCanon}"`);
   const dorks = getTargetedDorks(companyCanon, domain, owner_names);
   const allSerpHitsWithDorkType: {hit: SerperOrganicResult, dorkType: string}[] = [];
   const initialHitLinks = new Set<string>();
 
   for (const dorkInfo of dorks) {
     if (performance.now() - t0 > MAX_WALL_TIME_MS * 0.3 || serperQueries >= MAX_SERPER_CALLS) break;
-    console.log(`[OsintSpiderV4] Serper Query (Type: ${dorkInfo.type}, Prio: ${dorkInfo.priority}): ${dorkInfo.query}`);
+    console.log(`[OsintSpider] Serper Query (Type: ${dorkInfo.type}, Prio: ${dorkInfo.priority}): ${dorkInfo.query}`);
     try {
       const serperResponse = await postJSON<SerperResponse>(
         SERPER_API_URL,{q:dorkInfo.query,num:MAX_SERP_RESULTS_PER_PAGE,gl:"us",hl:"en"},{"X-API-KEY":SERPER_KEY!});
@@ -428,49 +460,47 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
       });
     } catch (e:unknown) {
         const err = e instanceof Error ? e : new Error(String(e));
-        console.warn(`[OsintSpiderV4] Serper call failed for dork "${dorkInfo.query}". Error: ${err.message}`);
+        console.warn(`[OsintSpider] Serper call failed for dork "${dorkInfo.query}". Error: ${err.message}`);
     }
   }
   serperResultsProcessed = allSerpHitsWithDorkType.length;
-  console.log(`[OsintSpiderV4] Serper BFS finished. ${serperResultsProcessed} initial hits from ${serperQueries} queries.`);
+  console.log(`[OsintSpider] Serper BFS finished. ${serperResultsProcessed} initial hits from ${serperQueries} queries.`);
 
   /*──── PHASE 1.5: ProxyCurl Enrichment ────*/
   if (PROXYCURL_KEY) {
-    console.log(`[OsintSpiderV4] Phase 1.5: Starting ProxyCurl enrichment.`);
-    const companyLinkedInHit = allSerpHitsWithDorkType.find(({hit}) => hit.link.includes("linkedin.com/company/"));
-    if (companyLinkedInHit && proxycurlCalls < MAX_PROXYCURL_CALLS) {
+    console.log(`[OsintSpider] Phase 1.5: Starting ProxyCurl enrichment.`);
+    const companyLinkedInHitResult = allSerpHitsWithDorkType.find(({hit}) => hit.link.includes("linkedin.com/company/"));
+    if (companyLinkedInHitResult && proxycurlCalls < MAX_PROXYCURL_CALLS) {
+        const companyLinkedInHit = companyLinkedInHitResult.hit;
         try {
-            const companyUrl = `${PROXYCURL_API_COMPANY_URL}?url=${encodeURIComponent(companyLinkedInHit.hit.link)}&fallback_to_cache=on-error&use_cache=if-present`;
+            const companyUrl = `${PROXYCURL_API_COMPANY_URL}?url=${encodeURIComponent(companyLinkedInHit.link)}&fallback_to_cache=on-error&use_cache=if-present`;
             const companyData = await postJSON<ProxyCurlCompanyResult>(companyUrl, {}, { Authorization: `Bearer ${PROXYCURL_KEY!}` }, "GET");
             proxycurlCalls++;
             if (companyData) {
                 const enrichedSnippet = `Industry: ${companyData.industry || "N/A"}, Founded: ${companyData.founded_year || "N/A"}. ${truncateText(companyData.description || "", 150)}`;
-                const existingHitIndex = allSerpHitsWithDorkType.findIndex(h => h.hit.link === companyLinkedInHit.hit.link);
-                const newHitData = { title: companyData.name || companyLinkedInHit.hit.title, link: companyLinkedInHit.hit.link, snippet: enrichedSnippet, position: -1 }; // position -1 to mark as enriched
+                const existingHitIndex = allSerpHitsWithDorkType.findIndex(h => h.hit.link === companyLinkedInHit.link);
+                const newHitData = { title: companyData.name || companyLinkedInHit.title, link: companyLinkedInHit.link, snippet: enrichedSnippet, position: -1 };
                 if (existingHitIndex !== -1) {
                     allSerpHitsWithDorkType[existingHitIndex].hit = { ...allSerpHitsWithDorkType[existingHitIndex].hit, ...newHitData };
                 } else {
                      allSerpHitsWithDorkType.unshift({ hit: newHitData, dorkType: "ProxyCurl_Company"});
                 }
-                console.log(`[OsintSpiderV4] Enriched company profile: ${companyLinkedInHit.hit.link}`);
+                console.log(`[OsintSpider] Enriched company profile: ${companyLinkedInHit.link}`);
             }
-        } catch (e: unknown) { 
-            // Error logged by postJSON, catch block still needed if postJSON could throw other errors
-            // Or if specific handling for ProxyCurl company enrichment failure is needed here beyond postJSON's logging
-            console.warn(`[OsintSpiderV4] Non-postJSON error during ProxyCurl company enrichment for ${companyLinkedInHit.hit.link}: ${(e instanceof Error ? e.message : String(e)).slice(0,100)}`);
-          }
+        } catch (e: unknown) { /* error logged by postJSON */ }
     }
 
     const ownersToEnrich = owner_names.slice(0, Math.min(3, MAX_PROXYCURL_CALLS - proxycurlCalls));
     for (const ownerName of ownersToEnrich) {
         if (proxycurlCalls >= MAX_PROXYCURL_CALLS) break;
         let ownerLinkedInUrl: string | undefined;
-        let ownerSerpHit: SerperOrganicResult | undefined = allSerpHitsWithDorkType.find(({hit}) =>
+        let ownerSerpHitObj = allSerpHitsWithDorkType.find(({hit}) =>
             hit.link.includes("linkedin.com/in/") && ( (hit.title||"").toLowerCase().includes(ownerName.toLowerCase()) || (hit.snippet||"").toLowerCase().includes(ownerName.toLowerCase()))
-        )?.hit;
+        );
+        let ownerSerpHit: SerperOrganicResult | undefined = ownerSerpHitObj?.hit;
 
         if (!ownerSerpHit) {
-            console.log(`[OsintSpiderV4] Serper searching for LinkedIn profile for owner: ${ownerName}`);
+            console.log(`[OsintSpider] Serper searching for LinkedIn profile for owner: ${ownerName}`);
             try {
                 const serperOwnerResp = await postJSON<SerperResponse>(SERPER_API_URL,
                   {q:`"${ownerName}" "${companyCanon}" "linkedin.com/in/" site:linkedin.com`,num:1,gl:"us",hl:"en"},{"X-API-KEY":SERPER_KEY!});
@@ -479,19 +509,16 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
                     ownerSerpHit = serperOwnerResp.organic[0];
                     ownerLinkedInUrl = ownerSerpHit.link;
                     if (!allSerpHitsWithDorkType.some(h => h.hit.link === ownerLinkedInUrl)) {
-                        allSerpHitsWithDorkType.unshift({ hit: {...ownerSerpHit, snippet: ownerSerpHit.snippet || ownerSerpHit.title }, dorkType: "ProxyCurl_Owner_Search"});
+                        allSerpHitsWithDorkType.unshift({ hit: {...ownerSerpHit, snippet: ownerSerpHit.snippet || ownerSerpHit.title || "" }, dorkType: "ProxyCurl_Owner_Search"});
                     }
                 }
-            } catch (e:unknown) { 
-                // Error logged by postJSON for the Serper call
-                console.warn(`[OsintSpiderV4] Non-postJSON error during Serper owner search for ${ownerName}: ${(e instanceof Error ? e.message : String(e)).slice(0,100)}`);
-              }
+            } catch (e:unknown) { /* error logged by postJSON */ }
         } else {
             ownerLinkedInUrl = ownerSerpHit.link;
         }
 
         if (ownerLinkedInUrl && proxycurlCalls < MAX_PROXYCURL_CALLS) {
-            console.log(`[OsintSpiderV4] Enriching owner profile via ProxyCurl: ${ownerName} - ${ownerLinkedInUrl}`);
+            console.log(`[OsintSpider] Enriching owner profile via ProxyCurl: ${ownerName} - ${ownerLinkedInUrl}`);
             try {
                 const profileUrl = `${PROXYCURL_API_PROFILE_URL}?url=${encodeURIComponent(ownerLinkedInUrl)}&fallback_to_cache=on-error&use_cache=if-present`;
                 const profileData = await postJSON<ProxyCurlProfileResult>(profileUrl, {}, {Authorization:`Bearer ${PROXYCURL_KEY!}`}, "GET");
@@ -505,42 +532,44 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
                     } else {
                         allSerpHitsWithDorkType.unshift({ hit: newHitData, dorkType: "ProxyCurl_Owner"});
                     }
-                    console.log(`[OsintSpiderV4] Enriched owner profile for ${ownerName}.`);
+                    console.log(`[OsintSpider] Enriched owner profile for ${ownerName}.`);
                 }
-            } catch (e: unknown) { 
-                // Error logged by postJSON for the ProxyCurl call
-                console.warn(`[OsintSpiderV4] Non-postJSON error during ProxyCurl profile enrichment for ${ownerName}: ${(e instanceof Error ? e.message : String(e)).slice(0,100)}`);
-              }
+            } catch (e: unknown) {
+                 const err = e instanceof Error ? e : new Error(String(e));
+                 console.warn(`[OsintSpider] ProxyCurl profile enrichment for ${ownerName} (${ownerLinkedInUrl}) failed. Error: ${err.message}`);
+            }
         }
     }
+  } else {
+    console.warn("[OsintSpider] Phase 1.5: Skipped ProxyCurl enrichment - PROXYCURL_KEY not set.");
   }
-  console.log(`[OsintSpiderV4] ProxyCurl enrichment finished. ${proxycurlCalls} calls made.`);
+  console.log(`[OsintSpider] ProxyCurl enrichment finished. ${proxycurlCalls} calls made.`);
 
 
   /*──── PHASE 2: Select Top Scraping Targets ────*/
-  console.log(`[OsintSpiderV4] Phase 2: Selecting top targets for scraping from ${allSerpHitsWithDorkType.length} hits.`);
+  console.log(`[OsintSpider] Phase 2: Selecting top targets for scraping from ${allSerpHitsWithDorkType.length} hits.`);
   const prioritizedScrapingTargets = selectTopScrapingTargets(
-      allSerpHitsWithDorkType, // CORRECTED: Pass the array of {hit, dorkType}
+      allSerpHitsWithDorkType,
       companyCanon, domain, MAX_FIRECRAWL_TARGETS
     );
-  console.log(`[OsintSpiderV4] Selected ${prioritizedScrapingTargets.length} targets for Firecrawl.`);
+  console.log(`[OsintSpider] Selected ${prioritizedScrapingTargets.length} targets for Firecrawl.`);
 
 
   /*──── PHASE 3: Firecrawl & Insight Extraction / File Flagging ────*/
-  console.log(`[OsintSpiderV4] Phase 3: Starting Firecrawl & Insight Extraction for ${prioritizedScrapingTargets.length} targets.`);
+  console.log(`[OsintSpider] Phase 3: Starting Firecrawl & Insight Extraction for ${prioritizedScrapingTargets.length} targets.`);
   const firecrawlPhaseStartTime = performance.now();
 
   for (const hit of prioritizedScrapingTargets) {
     if (performance.now() - firecrawlPhaseStartTime > FIRECRAWL_GLOBAL_BUDGET_MS ||
         performance.now() - t0 > MAX_WALL_TIME_MS * 0.85) {
-      console.warn("[OsintSpiderV4] Time budget for Firecrawl/Insight Extraction phase reached.");
+      console.warn("[OsintSpider] Time budget for Firecrawl/Insight Extraction phase reached. Stopping early.");
       break;
     }
 
     const citationNumber = citationsList.length + 1;
     citationsList.push({
         marker:`[${citationNumber}]`, url:hit.link, title:hit.title,
-        snippet:truncateText(hit.snippet || hit.title, 250)
+        snippet:truncateText(hit.snippet || hit.title || "", 250)
     });
 
     const isFile = hit.link.match(FILE_EXTENSIONS_REGEX);
@@ -550,18 +579,18 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
             url: hit.link, title: hit.title, serpSnippet: hit.snippet || "",
             predictedInterest, citationMarker: `[${citationNumber}]`
         });
-        console.log(`[OsintSpiderV4] File flagged: ${hit.link} - Interest: ${predictedInterest} ${`[${citationNumber}]`}`);
+        console.log(`[OsintSpider] File flagged: ${hit.link} - Interest: ${predictedInterest} ${`[${citationNumber}]`}`);
         continue;
     }
 
     if (processedUrlsForDeepAnalysis.has(hit.link)) continue;
 
-    const attemptInfo = `OsintSpiderV4 Target ${processedUrlsForDeepAnalysis.size + 1}/${prioritizedScrapingTargets.length}`;
+    const attemptInfo = `OsintSpider Target ${processedUrlsForDeepAnalysis.size + 1}/${prioritizedScrapingTargets.length}`;
     const scrapedText = await firecrawlWithLogging(hit.link, attemptInfo);
     processedUrlsForDeepAnalysis.add(hit.link);
 
     if (scrapedText && scrapedText.length > 150) {
-        console.log(`[OsintSpiderV4] Extracting insights from: ${hit.link} (Length: ${scrapedText.length})`);
+        console.log(`[OsintSpider] Extracting insights from: ${hit.link} (Length: ${scrapedText.length})`);
         const insights = await extractInsightsFromPage(scrapedText, hit.link, companyCanon, domain, owner_names);
         insights.forEach(insight => {
             const section = insight.categorySuggestion;
@@ -573,12 +602,12 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
                     citationMarker: `[${citationNumber}]`,
                     severity: insight.severitySuggestion,
                     origin: 'llm_insight',
-                    llmSuggestedCategory: insight.categorySuggestion // POPULATED
+                    llmSuggestedCategory: insight.categorySuggestion
                 });
             }
         });
     } else if (hit.snippet && hit.snippet.length > 70) {
-        console.log(`[OsintSpiderV4] Using SERP snippet for: ${hit.link} (Scrape fail/short text)`);
+        console.log(`[OsintSpider] Using SERP snippet for: ${hit.link} (Scrape fail/short text)`);
         const section = "Misc";
          if (bulletsBySection[section].length < MAX_BULLETS_PER_SECTION) {
             bulletsBySection[section].push({
@@ -592,11 +621,11 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
     }
   }
   const pagesForDeepAnalysisCount = processedUrlsForDeepAnalysis.size - filesForManualReviewList.length;
-  console.log(`[OsintSpiderV4] Phase 3 finished. Deep analysis on up to ${pagesForDeepAnalysisCount} pages. Files for review: ${filesForManualReviewList.length}.`);
+  console.log(`[OsintSpider] Phase 3 finished. Deep analysis on up to ${pagesForDeepAnalysisCount} pages. Files for review: ${filesForManualReviewList.length}.`);
 
 
   /*──── PHASE 4: LLM Summaries ────*/
-  console.log(`[OsintSpiderV4] Phase 4: Generating LLM section and executive summaries.`);
+  console.log(`[OsintSpider] Phase 4: Generating LLM section and executive summaries.`);
   llmSummarizationCalls = 0;
 
   const sectionsOutput:SectionOutput[] = await Promise.all(SECTIONS.map(async sectionName=>{
@@ -621,22 +650,18 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
 
   const topOverallFindingsText = sectionsOutput.flatMap(s => s.bullets)
     .filter(b => b.severity === "CRITICAL" || b.severity === "HIGH")
-    .sort((a, b) => { // CORRECTED SORT LOGIC
+    .sort((a, b) => {
         const severityRank = { "CRITICAL": 1, "HIGH": 2, "MEDIUM": 3, "LOW": 4, "INFO": 5 };
         if (severityRank[a.severity] !== severityRank[b.severity]) {
             return severityRank[a.severity] - severityRank[b.severity];
         }
-        const categoryA: SectionName = a.llmSuggestedCategory || // Use llmSuggestedCategory
-                                      (a.origin === 'heuristic_snippet' || a.origin === 'file_placeholder' ? 'Misc' : 'Misc');
-        const categoryB: SectionName = b.llmSuggestedCategory ||
-                                      (b.origin === 'heuristic_snippet' || b.origin === 'file_placeholder' ? 'Misc' : 'Misc');
+        const categoryA: SectionName = a.llmSuggestedCategory || (a.origin === 'heuristic_snippet' || a.origin === 'file_placeholder' ? 'Misc' : 'Misc');
+        const categoryB: SectionName = b.llmSuggestedCategory || (b.origin === 'heuristic_snippet' || b.origin === 'file_placeholder' ? 'Misc' : 'Misc');
         
-        const sectionIndexA = SECTIONS.indexOf(categoryA); // categoryA is now always a SectionName
+        const sectionIndexA = SECTIONS.indexOf(categoryA);
         const sectionIndexB = SECTIONS.indexOf(categoryB);
 
-        if (sectionIndexA !== sectionIndexB) {
-            return sectionIndexA - sectionIndexB;
-        }
+        if (sectionIndexA !== sectionIndexB) { return sectionIndexA - sectionIndexB; }
         return 0;
     })
     .slice(0, 5).map(b => `- ${b.text} (Severity: ${b.severity}, ${b.citationMarker})`).join("\n");
@@ -645,10 +670,10 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
   if (!execSummaryContext.trim()) execSummaryContext = "Overall assessment based on automated web search indicates limited specific actionable findings or risks at this time. Manual review of flagged files is recommended.";
 
   llmSummarizationCalls++;
-  const executiveSummaryPrompt = `Synthesize a 3-6 sentence executive summary for a web OSINT due diligence report on "${companyCanon}", based ONLY on the provided context. Highlight the most impactful intelligence (positive, negative, or neutral). Objectively state the overall picture. If findings are limited, state so.`;
+  const executiveSummaryPrompt = `Synthesize a 3-6 sentence executive summary for a web OSINT due diligence report on "${companyCanon}", based ONLY on the provided context. Highlight the most impactful intelligence. Objectively state the overall picture. If findings are limited, state so.`;
   const execSystemPrompt = "You are a principal OSINT investigator. Provide a concise, factual executive summary for a due diligence report.";
   const executiveSummary = await callLlmApi(executiveSummaryPrompt, execSystemPrompt, LLM_MODEL_SUMMARIZATION, MAX_TOKENS_EXEC_SUMMARY, 0.3);
-  console.log(`[OsintSpiderV4] LLM summaries generated. Summarization calls: ${llmSummarizationCalls}`);
+  console.log(`[OsintSpider] LLM summaries generated. Summarization calls: ${llmSummarizationCalls}`);
 
   const finalLlmCost = calculateLlmCallCost(totalLlmInputTokens, totalLlmOutputTokens);
   const costBreakdown={
@@ -658,7 +683,7 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
   costBreakdown.total = +(costBreakdown.serper + costBreakdown.firecrawl + costBreakdown.proxycurl + costBreakdown.llm).toFixed(4);
   const wallTimeSeconds = (performance.now() - t0) / 1000;
 
-  console.log(`[OsintSpiderV4 Finished] Wall time: ${wallTimeSeconds.toFixed(1)}s. LLM Cost: $${costBreakdown.llm}. Total Cost: $${costBreakdown.total}`);
+  console.log(`[OsintSpider Finished] Wall time: ${wallTimeSeconds.toFixed(1)}s. LLM Cost: $${costBreakdown.llm}. Total Cost: $${costBreakdown.total}`);
 
   return {
     company: company_name, domain, generated: new Date().toISOString(),
@@ -680,7 +705,32 @@ export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayloa
 }
 
 // Example usage:
-// async function testOsintSpiderV4() {
-//   // ... (ensure API keys are set)
+// async function testOsintSpider() { // RENAMED from testOsintSpiderV4
+//   if (!SERPER_KEY || !FIRECRAWL_KEY || !PROXYCURL_KEY || !OPENAI_API_KEY) {
+//     console.error("Cannot run test: Missing API keys in environment."); return;
+//   }
+//   try {
+//     const results = await runOsintSpider({ // RENAMED from runOsintSpiderV4
+//       company_name: "South Sound Electric Inc",
+//       domain: "southsoundelectric.com",
+//       owner_names: ["Raymond Boink"]
+//     });
+//     console.log("\n\n--- OsintSpider FINAL PAYLOAD ---");
+//     console.log("Executive Summary:", results.summary);
+//     results.sections.forEach(s => {
+//         console.log(`\n--- ${s.name} (${s.bullets.length} bullets) ---`);
+//         console.log(s.summary);
+//         s.bullets.slice(0,3).forEach(b => console.log(`  - LVL:${b.severity} ${b.text.slice(0,100)}... ${b.citationMarker})`));
+//     });
+//     if(results.filesForManualReview.length > 0) {
+//         console.log("\n--- Files for Manual Review ---");
+//         results.filesForManualReview.slice(0,3).forEach(f => console.log(`  - ${f.title} (${f.predictedInterest}) ${f.citationMarker}`));
+//     }
+//     console.log("\nStats:", results.stats);
+//     console.log("Costs:", results.cost);
+//   } catch (error: unknown) {
+//     const err = error instanceof Error ? error : new Error(String(error));
+//     console.error("Test OsintSpider failed:", err.message, err.stack);
+//   }
 // }
-// testOsintSpiderV4();
+// testOsintSpider(); // RENAMED
