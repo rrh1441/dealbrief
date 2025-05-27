@@ -30,7 +30,7 @@ const MAX_SERPER_CALLS   = 600;
 const MAX_SERP_RESULTS_PER_PAGE = 10;
 const MAX_FIRECRAWL_TARGETS     = 50;
 const MAX_PROXYCURL_CALLS     = 10;
-const FIRECRAWL_BATCH_SIZE   = 5;
+// const FIRECRAWL_BATCH_SIZE   = 5; // Commented out as it's not directly used by firecrawlWithLogging logic
 const FIRECRAWL_GLOBAL_BUDGET_MS = 300 * 1000;
 const MAX_WALL_TIME_MS      = 12 * 60 * 1000;
 
@@ -454,7 +454,11 @@ export async function runOsintSpiderV4(rawInput:unknown):Promise<OsintSpiderPayl
                 }
                 console.log(`[OsintSpiderV4] Enriched company profile: ${companyLinkedInHit.hit.link}`);
             }
-        } catch (e: unknown) { /* error logged by postJSON */ }
+        } catch (e: unknown) { 
+            // Error logged by postJSON, catch block still needed if postJSON could throw other errors
+            // Or if specific handling for ProxyCurl company enrichment failure is needed here beyond postJSON's logging
+            console.warn(`[OsintSpiderV4] Non-postJSON error during ProxyCurl company enrichment for ${companyLinkedInHit.hit.link}: ${(e instanceof Error ? e.message : String(e)).slice(0,100)}`);
+          }
     }
 
     const ownersToEnrich = owner_names.slice(0, Math.min(3, MAX_PROXYCURL_CALLS - proxycurlCalls));
@@ -478,7 +482,10 @@ export async function runOsintSpiderV4(rawInput:unknown):Promise<OsintSpiderPayl
                         allSerpHitsWithDorkType.unshift({ hit: {...ownerSerpHit, snippet: ownerSerpHit.snippet || ownerSerpHit.title }, dorkType: "ProxyCurl_Owner_Search"});
                     }
                 }
-            } catch (e:unknown) { /* error logged by postJSON */ }
+            } catch (e:unknown) { 
+                // Error logged by postJSON for the Serper call
+                console.warn(`[OsintSpiderV4] Non-postJSON error during Serper owner search for ${ownerName}: ${(e instanceof Error ? e.message : String(e)).slice(0,100)}`);
+              }
         } else {
             ownerLinkedInUrl = ownerSerpHit.link;
         }
@@ -500,7 +507,10 @@ export async function runOsintSpiderV4(rawInput:unknown):Promise<OsintSpiderPayl
                     }
                     console.log(`[OsintSpiderV4] Enriched owner profile for ${ownerName}.`);
                 }
-            } catch (e: unknown) { /* error logged by postJSON */ }
+            } catch (e: unknown) { 
+                // Error logged by postJSON for the ProxyCurl call
+                console.warn(`[OsintSpiderV4] Non-postJSON error during ProxyCurl profile enrichment for ${ownerName}: ${(e instanceof Error ? e.message : String(e)).slice(0,100)}`);
+              }
         }
     }
   }
