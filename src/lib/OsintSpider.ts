@@ -15,17 +15,26 @@
    import OpenAI from "openai";
    
    /*────────────────────────── ENV ──────────────────────────*/
-   const {
-     SERPER_KEY,
-     FIRECRAWL_KEY,
-     PROXYCURL_KEY,
-     OPENAI_API_KEY,
-   } = process.env;
+   let SERPER_KEY: string;
+   let FIRECRAWL_KEY: string;
+   let PROXYCURL_KEY: string;
+   let OPENAI_API_KEY: string;
+
+   try {
+     const env = process.env;
+     SERPER_KEY = env.SERPER_KEY!;
+     FIRECRAWL_KEY = env.FIRECRAWL_KEY!;
+     PROXYCURL_KEY = env.PROXYCURL_KEY!;
+     OPENAI_API_KEY = env.OPENAI_API_KEY!;
    
-   if (!SERPER_KEY || !FIRECRAWL_KEY || !PROXYCURL_KEY || !OPENAI_API_KEY) {
-     throw new Error(
-       "CRITICAL ERROR: Missing one or more API keys (SERPER_KEY, FIRECRAWL_KEY, PROXYCURL_KEY, OPENAI_API_KEY).",
-     );
+     if (!SERPER_KEY || !FIRECRAWL_KEY || !PROXYCURL_KEY || !OPENAI_API_KEY) {
+       throw new Error(
+         "CRITICAL ERROR: Missing one or more API keys (SERPER_KEY, FIRECRAWL_KEY, PROXYCURL_KEY, OPENAI_API_KEY)."
+       );
+     }
+   } catch (err) {
+     console.error("Fatal initialisation error:", err);
+     throw err;          // still let the function fail with 500
    }
    
    /*──────────────────────── CONSTANTS ──────────────────────*/
@@ -36,11 +45,11 @@
    
    const MAX_SERPER_CALLS             = 600;
    const MAX_SERP_RESULTS_PER_PAGE    = 10;
-   const MAX_FIRECRAWL_TARGETS        = 50;
+   const MAX_FIRECRAWL_TARGETS        = 40;
    const MAX_PROXYCURL_CALLS          = 10;
    
-   const FIRECRAWL_GLOBAL_BUDGET_MS   = 420_000;   // 7 min
-   const MAX_WALL_TIME_MS             = 700_000;   // 11 min 40 s (Vercel limit – safety headroom)
+   const FIRECRAWL_GLOBAL_BUDGET_MS   = 360_000;   // 6 min (compromise)
+   const MAX_WALL_TIME_MS             = 600_000;   // 10 min (under your 720s limit)
    
    const LLM_MODEL_INSIGHT_EXTRACTION = "gpt-4o-mini";
    const LLM_MODEL_FILE_PREDICTION    = "gpt-4o-mini";
@@ -452,6 +461,7 @@
    
    /*──────────────────────── MAIN FUNCTION ─────────────────────────*/
    export async function runOsintSpider(rawInput:unknown):Promise<OsintSpiderPayload>{
+     console.log("[OsintSpider] Starting with input:", rawInput);
      const t0 = performance.now();
    
      /* reset global counters */
@@ -462,6 +472,8 @@
    
      const { company_name, domain, owner_names=[] } =
        osintSpiderInputSchema.parse(rawInput);
+     
+     console.log("[OsintSpider] Parsed input - company:", company_name, "domain:", domain);
    
      const canon = company_name.toLowerCase()
        .replace(/[,.]?\s*(inc|llc|ltd|corp(or)?(ation)?|limited|company|co)\s*$/i,"")
