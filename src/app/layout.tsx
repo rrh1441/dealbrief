@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "DealBrief",
-  description: "Instant intel for every meeting.",
+  description: "DealBrief completes cyber, legal, reputation, and leadership diligence in under 3 hours — so you close with facts, not guesswork.",
 };
 
 export default function RootLayout({

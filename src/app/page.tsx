@@ -128,7 +128,7 @@ export default function Page() {
   const [stepIdx, setStepIdx] = useState(0);
   const [remaining, setRemaining] = useState(45); // seconds
 
-  /* form ref for Safari “unsaved text” workaround */
+  /* form ref for Safari "unsaved text" workaround */
   const formRef = useRef<HTMLFormElement | null>(null); /* ← NEW */
 
   /* advance every second while loading */
@@ -243,11 +243,17 @@ export default function Page() {
             <Link href="#features" className="hover:text-indigo-600">
               Features
             </Link>
+            <Link href="#" className="hover:text-indigo-600">
+              Why Non-Financial DD
+            </Link>
+            <Link href="#" className="hover:text-indigo-600">
+              Use-Cases
+            </Link>
             <Link href="#faq" className="hover:text-indigo-600">
               FAQ
             </Link>
             <Button size="sm" asChild>
-              <Link href="#generate">Generate Brief</Link>
+              <Link href="#generate">Generate Deal Brief</Link>
             </Button>
           </div>
         </div>
@@ -259,10 +265,10 @@ export default function Page() {
           {/* Hero text */}
           <div>
             <h1 className="text-5xl font-bold tracking-tight">
-              Instant&nbsp;intel for every meeting
+              Think Outside the Books.
             </h1>
             <p className="mt-4 text-lg text-slate-600">
-            Stop digging for info - gain back valuable hours and arrive prepared for every conversation
+              DealBrief completes cyber, legal, reputation, and leadership diligence in under 3 hours — so you close with facts, not guesswork.
             </p>
           </div>
 
@@ -281,7 +287,7 @@ export default function Page() {
               </Label>
               <Input
                 id="companyName"
-                placeholder="NVIDIA"
+                placeholder="Acme Widgets"
                 value={form.companyName}
                 onChange={(e) =>
                   setForm({ ...form, companyName: e.target.value })
@@ -292,11 +298,11 @@ export default function Page() {
 
             <div className="flex items-center gap-2">
               <Label htmlFor="companyDomain" className="w-32">
-                Company Domain (Website URL)
+                Domain
               </Label>
               <Input
                 id="companyDomain"
-                placeholder="nvidia.com"
+                placeholder="acmewidgets.com"
                 value={form.companyDomain}
                 onChange={(e) =>
                   setForm({ ...form, companyDomain: e.target.value })
@@ -323,7 +329,7 @@ export default function Page() {
               {loading ? (
                 <Loader2 className="animate-spin h-4 w-4" />
               ) : (
-                "Generate Brief"
+                "Generate Deal Brief"
               )}
             </Button>
           </motion.form>
@@ -418,7 +424,7 @@ export default function Page() {
             {[
               { name: "Investors", icon: "💼", blurb: "Vet founders before they pitch." },
               { name: "Recruiters", icon: "🎯", blurb: "Assess executive candidates in minutes." },
-              { name: "Founders",  icon: "🚀", blurb: "Know your counterpart’s angle before negotiations." },
+              { name: "Founders",  icon: "🚀", blurb: "Know your counterpart's angle before negotiations." },
               { name: "Sales",     icon: "📈", blurb: "Skip the research rabbit hole and open with insight." },
             ].map((u) => (
               <Card key={u.name} className="text-center shadow-sm">
