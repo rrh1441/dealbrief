@@ -3,7 +3,7 @@
 /* -------------------------------------------------------------------------- */
 "use client";
 
-import { useState, useEffect, useRef, type FormEvent } from "react"; /* ← added useRef */
+import { useState, useEffect, useRef, type FormEvent } from "react";
 import Link from "next/link";
 import {
   Card,
@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, CheckCircle2 } from "lucide-react";
+import { Loader2, CheckCircle2, Quote } from "lucide-react";
 import { motion } from "framer-motion";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -44,56 +44,43 @@ const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnon);
 /* -------------------------------------------------------------------------- */
 const sampleBriefHtmlContent = `
 <div>
-  <h2><strong>Meeting Brief: Jensen Huang – NVIDIA</strong></h2>
+  <h2><strong>Deal Brief: Metal Supermarkets – Franchise Resale</strong></h2>
   <p>&nbsp;</p>
   <h3><strong>Executive Summary</strong></h3>
   <p>
-    Jensen Huang is the founder and CEO of NVIDIA, a position he has held since
-    founding the company in 1993.<sup><a href="https://nvidianews.nvidia.com/bios/jensen-huang" target="_blank" rel="noopener noreferrer">6</a></sup>
+    Metal Supermarkets is a franchised metal supply chain with 85+ locations across North America, operating since 1985.<sup><a href="https://www.metalsupermarkets.com/about/" target="_blank" rel="noopener noreferrer">1</a></sup>
   </p>
   <p>&nbsp;</p>
-  <h3><strong>Job History</strong></h3>
+  <h3><strong>Cyber Findings</strong></h3>
   <ul class="list-disc pl-5">
-    <li>Founder and CEO — NVIDIA (1993 – Present)</li>
-    <li>Dishwasher, Busboy, Waiter — Denny's (1978 – 1983)</li>
+    <li>No major data breaches reported in public databases</li>
+    <li>SSL certificate properly configured across main domains</li>
+    <li>Email security protocols (SPF, DKIM) properly implemented</li>
   </ul>
   <p>&nbsp;</p>
-  <h3><strong>Highlights</strong></h3>
+  <h3><strong>Legal & Liens</strong></h3>
   <ul class="list-disc pl-5">
-    <li>
-      Jensen Huang co-founded NVIDIA in 1993 and has led it to become the most
-      valuable public company in the world as of 2024.<sup><a href="https://www.carnegie.org/awards/honoree/jensen-huang/" target="_blank" rel="noopener noreferrer">14</a></sup>
-    </li>
-    <li>
-      Before founding NVIDIA, Jensen Huang worked at Denny's as a dishwasher,
-      busboy and waiter from 1978 to 1983.<sup><a href="https://www.dennys.com/jensen-huang-dennys-story-his-favorite-order-how-make-it" target="_blank" rel="noopener noreferrer">16</a></sup>
-    </li>
-    <li>
-      Jensen Huang's journey from working at Denny's to leading a trillion-dollar tech company inspired Denny's to create a special
-      'NVIDIA Breakfast Bytes' menu item in his honor.<sup><a href="https://www.dennys.com/news/dennys-debuts-new-nvidiar-breakfast-bytes" target="_blank" rel="noopener noreferrer">17</a></sup>
-    </li>
-    <li>
-      NVIDIA was originally launched from a local Denny's restaurant where Jensen Huang and his co-founders met and planned the company.<sup><a href="https://en.wikipedia.org/wiki/Jensen_Huang" target="_blank" rel="noopener noreferrer">18</a></sup>
-    </li>
+    <li>No federal or state liens found against corporate entities</li>
+    <li>Trademark registrations current and active</li>
+    <li>Franchise disclosure documents filed properly with regulators</li>
   </ul>
   <p>&nbsp;</p>
-  <h3><strong>Detailed Research Notes</strong></h3>
+  <h3><strong>Reputation Signals</strong></h3>
   <ul class="list-disc pl-5">
-    <li>
-      Jensen Huang has served as president, CEO and board member of NVIDIA continuously since its founding in 1993.<sup><a href="https://nvidianews.nvidia.com/bios/jensen-huang" target="_blank" rel="noopener noreferrer">6</a></sup>
-    </li>
-    <li>
-      He has publicly emphasized the transformative impact of AI and accelerated computing in recent keynote addresses including GTC 2025.<sup><a href="https://www.nvidia.com/gtc/keynote/" target="_blank" rel="noopener noreferrer">12</a></sup>
-    </li>
-    <li>
-      Jensen Huang has acknowledged the global competition in AI, noting that China is 'not behind' in artificial intelligence development.<sup><a href="https://www.cnbc.com/2025/04/30/nvidia-ceo-jensen-huang-says-china-not-behind-in-ai.html" target="_blank" rel="noopener noreferrer">9</a></sup>
-    </li>
-    <li>
-      His early work experience at Denny's included roles as dishwasher, busboy and waiter which he credits with teaching him valuable life lessons.<sup><a href="https://www.dennys.com/jensen-huang-dennys-story-his-favorite-order-how-make-it" target="_blank" rel="noopener noreferrer">16</a></sup>
-    </li>
-    <li>
-      NVIDIA's founding story is closely tied to Silicon Valley culture with a commemorative plaque unveiled at the Denny's where the company was conceived.<sup><a href="https://blogs.nvidia.com/blog/nvidia-dennys-trillion/" target="_blank" rel="noopener noreferrer">19</a></sup>
-    </li>
+    <li>Strong BBB rating (A+) with minimal complaints</li>
+    <li>Positive franchise owner sentiment on industry forums</li>
+    <li>No major ESG controversies identified</li>
+  </ul>
+  <p>&nbsp;</p>
+  <h3><strong>Leadership Background</strong></h3>
+  <ul class="list-disc pl-5">
+    <li>CEO: 15+ years industry experience, no litigation history</li>
+    <li>Management team stable with low turnover</li>
+  </ul>
+  <p>&nbsp;</p>
+  <h3><strong>Red Flags</strong></h3>
+  <ul class="list-disc pl-5">
+    <li>None identified requiring immediate attention</li>
   </ul>
 </div>
 `;
@@ -129,7 +116,7 @@ export default function Page() {
   const [remaining, setRemaining] = useState(45); // seconds
 
   /* form ref for Safari "unsaved text" workaround */
-  const formRef = useRef<HTMLFormElement | null>(null); /* ← NEW */
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   /* advance every second while loading */
   useEffect(() => {
@@ -184,7 +171,7 @@ export default function Page() {
     formRef.current
       ?.querySelectorAll<HTMLInputElement>("input")
       .forEach((el) => {
-        el.defaultValue = el.value;          /* ← NEW */
+        el.defaultValue = el.value;
       });
 
     setLoading(true);
@@ -243,10 +230,10 @@ export default function Page() {
             <Link href="#features" className="hover:text-indigo-600">
               Features
             </Link>
-            <Link href="#" className="hover:text-indigo-600">
+            <Link href="#why-non-financial" className="hover:text-indigo-600">
               Why Non-Financial DD
             </Link>
-            <Link href="#" className="hover:text-indigo-600">
+            <Link href="#use-cases" className="hover:text-indigo-600">
               Use-Cases
             </Link>
             <Link href="#faq" className="hover:text-indigo-600">
@@ -259,7 +246,7 @@ export default function Page() {
         </div>
       </nav>
 
-      {/* HERO + FORM + DEMO ------------------------------------------------- */}
+      {/* HERO + FORM -------------------------------------------------------- */}
       <header className="bg-gradient-to-b from-white to-slate-50">
         <div className="max-w-5xl mx-auto px-4 py-24 flex flex-col gap-10 text-center">
           {/* Hero text */}
@@ -272,66 +259,185 @@ export default function Page() {
             </p>
           </div>
 
-          {/* FORM ----------------------------------------------------------- */}
+          {/* RESPONSIVE FORM ------------------------------------------------ */}
           <motion.form
-            ref={formRef} /* ← NEW */
+            ref={formRef}
             id="generate"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0, transition: { duration: 0.4 } }}
             onSubmit={submit}
-            className="w-full max-w-xl mx-auto bg-white rounded-2xl shadow-lg p-6 flex flex-col gap-4"
+            className="w-full max-w-4xl mx-auto bg-white rounded-2xl shadow-lg p-6"
           >
-            <div className="flex items-center gap-2">
-              <Label htmlFor="companyName" className="w-32">
-                Company Name
-              </Label>
-              <Input
-                id="companyName"
-                placeholder="Acme Widgets"
-                value={form.companyName}
-                onChange={(e) =>
-                  setForm({ ...form, companyName: e.target.value })
-                }
-                required
-              />
+            {/* Desktop ≥1024px: Row 1 - Company Name (1/2) Domain (1/2), Row 2 - Leadership (3/4) CTA (1/4) */}
+            <div className="hidden lg:grid lg:grid-cols-2 lg:gap-4 lg:mb-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="companyName" className="text-sm font-medium">
+                  Company Name
+                </Label>
+                <Input
+                  id="companyName"
+                  placeholder="Acme Widgets"
+                  value={form.companyName}
+                  onChange={(e) =>
+                    setForm({ ...form, companyName: e.target.value })
+                  }
+                  className="rounded-full"
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="companyDomain" className="text-sm font-medium">
+                  Domain
+                </Label>
+                <Input
+                  id="companyDomain"
+                  placeholder="acmewidgets.com"
+                  value={form.companyDomain}
+                  onChange={(e) =>
+                    setForm({ ...form, companyDomain: e.target.value })
+                  }
+                  className="rounded-full"
+                  required
+                />
+              </div>
+            </div>
+            <div className="hidden lg:grid lg:grid-cols-4 lg:gap-4">
+              <div className="lg:col-span-3 flex flex-col gap-2">
+                <Label htmlFor="companyLeader" className="text-sm font-medium">
+                  Leadership (CEO / Owner)
+                </Label>
+                <Input
+                  id="companyLeader"
+                  placeholder="Jane Smith"
+                  value={form.companyLeader}
+                  onChange={(e) =>
+                    setForm({ ...form, companyLeader: e.target.value })
+                  }
+                  className="rounded-full"
+                />
+              </div>
+              <div className="flex flex-col justify-end">
+                <Button type="submit" disabled={loading} className="rounded-full">
+                  {loading ? (
+                    <Loader2 className="animate-spin h-4 w-4" />
+                  ) : (
+                    "Generate Deal Brief"
+                  )}
+                </Button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Label htmlFor="companyDomain" className="w-32">
-                Domain
-              </Label>
-              <Input
-                id="companyDomain"
-                placeholder="acmewidgets.com"
-                value={form.companyDomain}
-                onChange={(e) =>
-                  setForm({ ...form, companyDomain: e.target.value })
-                }
-                required
-              />
+            {/* Tablet 640-1023px: Row 1 - Company Name (1/2) Domain (1/2), Row 2 - Leadership (full) CTA (full) */}
+            <div className="hidden sm:grid lg:hidden sm:grid-cols-2 sm:gap-4 sm:mb-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="companyNameTablet" className="text-sm font-medium">
+                  Company Name
+                </Label>
+                <Input
+                  id="companyNameTablet"
+                  placeholder="Acme Widgets"
+                  value={form.companyName}
+                  onChange={(e) =>
+                    setForm({ ...form, companyName: e.target.value })
+                  }
+                  className="rounded-full"
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="companyDomainTablet" className="text-sm font-medium">
+                  Domain
+                </Label>
+                <Input
+                  id="companyDomainTablet"
+                  placeholder="acmewidgets.com"
+                  value={form.companyDomain}
+                  onChange={(e) =>
+                    setForm({ ...form, companyDomain: e.target.value })
+                  }
+                  className="rounded-full"
+                  required
+                />
+              </div>
+            </div>
+            <div className="hidden sm:flex lg:hidden flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="companyLeaderTablet" className="text-sm font-medium">
+                  Leadership (CEO / Owner)
+                </Label>
+                <Input
+                  id="companyLeaderTablet"
+                  placeholder="Jane Smith"
+                  value={form.companyLeader}
+                  onChange={(e) =>
+                    setForm({ ...form, companyLeader: e.target.value })
+                  }
+                  className="rounded-full"
+                />
+              </div>
+              <Button type="submit" disabled={loading} className="rounded-full">
+                {loading ? (
+                  <Loader2 className="animate-spin h-4 w-4" />
+                ) : (
+                  "Generate Deal Brief"
+                )}
+              </Button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Label htmlFor="companyLeader" className="w-32">
-                Company Leader (CEO, Founder, Owner)
-              </Label>
-              <Input
-                id="companyLeader"
-                placeholder="Jensen Huang"
-                value={form.companyLeader}
-                onChange={(e) =>
-                  setForm({ ...form, companyLeader: e.target.value })
-                }
-              />
+            {/* Mobile <640px: Stack all vertically */}
+            <div className="sm:hidden flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="companyNameMobile" className="text-sm font-medium">
+                  Company Name
+                </Label>
+                <Input
+                  id="companyNameMobile"
+                  placeholder="Acme Widgets"
+                  value={form.companyName}
+                  onChange={(e) =>
+                    setForm({ ...form, companyName: e.target.value })
+                  }
+                  className="rounded-full"
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="companyDomainMobile" className="text-sm font-medium">
+                  Domain
+                </Label>
+                <Input
+                  id="companyDomainMobile"
+                  placeholder="acmewidgets.com"
+                  value={form.companyDomain}
+                  onChange={(e) =>
+                    setForm({ ...form, companyDomain: e.target.value })
+                  }
+                  className="rounded-full"
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="companyLeaderMobile" className="text-sm font-medium">
+                  Leadership (CEO / Owner)
+                </Label>
+                <Input
+                  id="companyLeaderMobile"
+                  placeholder="Jane Smith"
+                  value={form.companyLeader}
+                  onChange={(e) =>
+                    setForm({ ...form, companyLeader: e.target.value })
+                  }
+                  className="rounded-full"
+                />
+              </div>
+              <Button type="submit" disabled={loading} className="rounded-full">
+                {loading ? (
+                  <Loader2 className="animate-spin h-4 w-4" />
+                ) : (
+                  "Generate Deal Brief"
+                )}
+              </Button>
             </div>
-
-            <Button type="submit" disabled={loading}>
-              {loading ? (
-                <Loader2 className="animate-spin h-4 w-4" />
-              ) : (
-                "Generate Deal Brief"
-              )}
-            </Button>
           </motion.form>
 
           {/* DEMO / LOADER / OUTPUT ---------------------------------------- */}
@@ -354,7 +460,7 @@ export default function Page() {
               <Card>
                 <CardHeader>
                   <CardTitle>
-                    Brief ready{" "}
+                    Deal Brief Complete{" "}
                     <CheckCircle2 className="inline h-5 w-5 text-green-600" />
                   </CardTitle>
                   <CardDescription>Scroll or copy as needed</CardDescription>
@@ -370,7 +476,8 @@ export default function Page() {
             {!loading && !briefHtml && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Real Example Brief</CardTitle>
+                  <CardTitle>Sample Deal Brief</CardTitle>
+                  <CardDescription>Target: Metal Supermarkets – Franchise Resale</CardDescription>
                 </CardHeader>
                 <CardContent className="prose prose-lg prose-slate max-w-none text-left max-h-96 overflow-auto prose-li:marker:text-slate-600">
                   <div
@@ -385,57 +492,202 @@ export default function Page() {
         </div>
       </header>
 
-      {/* FEATURES ----------------------------------------------------------- */}
-      <section id="features" className="py-24 bg-white">
-        <div className="max-w-6xl mx-auto px-4 grid gap-8 grid-cols-1 sm:grid-cols-3">
-          {[
-            {
-              title: "Deep open source coverage",
-              desc: "LinkedIn, filings, press, podcasts & more in one pass.",
-            },
-            {
-              title: "Footnoted sources",
-              desc: "Every claim backed by a link — no hidden hallucinations.",
-            },
-            {
-              title: "Conversational hooks",
-              desc: "2–3 rapport-building facts to break the ice.",
-            },
-          ].map((f) => (
-            <Card key={f.title} className="shadow-sm">
-              <CardHeader>
-                <CardTitle>{f.title}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-slate-600">
-                <p>{f.desc}</p>
-              </CardContent>
-            </Card>
-          ))}
+      {/* SPEED STRIPE ------------------------------------------------------- */}
+      <section className="py-4 text-lg font-semibold text-center text-white bg-slate-800">
+        <div className="max-w-6xl mx-auto px-4">
+          Traditional diligence drags 4–12 weeks. DealBrief delivers a documented risk brief in under 3 hours.
         </div>
       </section>
 
-      {/* USE-CASES ---------------------------------------------------------- */}
-      <section className="py-24 bg-slate-50">
-        <div className="max-w-5xl mx-auto px-4 space-y-12">
-          <h2 className="text-3xl font-semibold text-center">
-            Built for every high-stakes meeting
+      {/* WHY NON-FINANCIAL DD ----------------------------------------------- */}
+      <section id="why-non-financial" className="py-24 bg-white">
+        <div className="max-w-6xl mx-auto px-4 space-y-12">
+          <h2 className="text-3xl font-bold text-center">
+            Why Non-Financial Due Diligence?
           </h2>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-8 md:grid-cols-3">
             {[
-              { name: "Investors", icon: "💼", blurb: "Vet founders before they pitch." },
-              { name: "Recruiters", icon: "🎯", blurb: "Assess executive candidates in minutes." },
-              { name: "Founders",  icon: "🚀", blurb: "Know your counterpart's angle before negotiations." },
-              { name: "Sales",     icon: "📈", blurb: "Skip the research rabbit hole and open with insight." },
-            ].map((u) => (
-              <Card key={u.name} className="text-center shadow-sm">
+              {
+                title: "Cyber & Data Exposure",
+                desc: "Identify breaches, open ports, leaked secrets, misconfigured storage, and software supply-chain risk before they become your liability."
+              },
+              {
+                title: "Legal & Compliance",
+                desc: "Surface lawsuits, liens, regulatory actions, sanctions, and license gaps that can stall integration or trigger indemnities."
+              },
+              {
+                title: "Reputation & Leadership",
+                desc: "Analyze press, social sentiment, executive history, ESG controversies, and Glassdoor chatter to gauge cultural and reputational fit."
+              }
+            ].map((item) => (
+              <Card key={item.title} className="shadow-sm">
                 <CardHeader>
-                  <CardTitle className="flex flex-col items-center gap-2">
-                    <span className="text-4xl">{u.icon}</span>
-                    {u.name}
-                  </CardTitle>
+                  <CardTitle>{item.title}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-slate-600">{u.blurb}</p>
+                  <p className="text-slate-600">{item.desc}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FEATURES ----------------------------------------------------------- */}
+      <section id="features" className="py-24 bg-slate-50">
+        <div className="max-w-6xl mx-auto px-4 space-y-12">
+          <h2 className="text-3xl font-semibold text-center">
+            Built for professionals who can't wait
+          </h2>
+          <div className="grid gap-8 md:grid-cols-3">
+            {[
+              {
+                title: "Acquirers",
+                desc: "Validate targets in < 4 hours. Enter the LOI phase armed with hard facts.",
+                border: "border-t-4 border-t-cyan-500"
+              },
+              {
+                title: "Brokers", 
+                desc: "Package diligence for buyers and lenders same-day; shorten deal cycles.",
+                border: "border-t-4 border-t-cyan-500"
+              },
+              {
+                title: "Lenders & Investors",
+                desc: "Reveal hidden risk pre-term-sheet; protect portfolio IRR.",
+                border: "border-t-4 border-t-cyan-500"
+              }
+            ].map((f) => (
+              <Card key={f.title} className={`shadow-sm ${f.border}`}>
+                <CardHeader>
+                  <CardTitle>{f.title}</CardTitle>
+                </CardHeader>
+                <CardContent className="text-slate-600">
+                  <p>{f.desc}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* HOW IT WORKS ------------------------------------------------------- */}
+      <section className="py-24 bg-white">
+        <div className="max-w-6xl mx-auto px-4 space-y-12">
+          <h2 className="text-3xl font-semibold text-center">How It Works</h2>
+          <div className="flex flex-col lg:flex-row lg:gap-10 text-center space-y-8 lg:space-y-0">
+            {[
+              {
+                step: "1",
+                title: "Submit basic details",
+                desc: "Company name, domain, leadership."
+              },
+              {
+                step: "2", 
+                title: "Automated multi-source crawl",
+                desc: "Live web search, court dockets, breach databases, corporate registries, media."
+              },
+              {
+                step: "3",
+                title: "Receive Deal Brief PDF",
+                desc: "Actionable report + source links < 3 hrs."
+              }
+            ].map((item) => (
+              <div key={item.step} className="lg:flex-1">
+                <div className="inline-flex items-center justify-center w-12 h-12 bg-indigo-600 text-white rounded-full text-xl font-bold mb-4">
+                  {item.step}
+                </div>
+                <h3 className="text-xl font-semibold mb-2">{item.title}</h3>
+                <p className="text-slate-600">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* USE-CASE GALLERY --------------------------------------------------- */}
+      <section id="use-cases" className="py-24 bg-slate-50">
+        <div className="max-w-6xl mx-auto px-4 space-y-12">
+          <h2 className="text-3xl font-semibold text-center">
+            Use-Case Gallery
+          </h2>
+          <div className="grid gap-6 sm:grid-cols-2">
+            {[
+              {
+                name: "Roll-up acquisitions",
+                desc: "Rapid target screening for serial acquirers building market dominance through multiple acquisitions.",
+                icon: "🎯"
+              },
+              {
+                name: "Franchise diligence", 
+                desc: "Comprehensive franchise system analysis including franchisor stability and territory risk assessment.",
+                icon: "🏪"
+              },
+              {
+                name: "SBA 7(a) lender checks",
+                desc: "Enhanced borrower screening for SBA lenders requiring thorough non-financial risk evaluation.",
+                icon: "🏦"
+              },
+              {
+                name: "VC / growth equity add-ons",
+                desc: "Portfolio company add-on acquisition screening to identify synergies and integration risks.",
+                icon: "🚀"
+              }
+            ].map((useCase) => (
+              <Card key={useCase.name} className="bg-slate-800 text-white shadow-lg">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-3">
+                    <span className="text-2xl">{useCase.icon}</span>
+                    {useCase.name}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-slate-300">{useCase.desc}</p>
+                  <Button variant="outline" size="sm" className="bg-white text-slate-800 hover:bg-slate-100">
+                    Generate Deal Brief
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* TESTIMONIALS ------------------------------------------------------- */}
+      <section className="py-24 bg-white">
+        <div className="max-w-6xl mx-auto px-4 space-y-12">
+          <h2 className="text-3xl font-semibold text-center">
+            What Our Clients Say
+          </h2>
+          <div className="grid gap-8 md:grid-cols-3">
+            {[
+              {
+                quote: "DealBrief cut our pre-LOI diligence from 3 weeks to 4 hours. We can now move faster on competitive deals.",
+                author: "Sarah Chen",
+                title: "VP Acquisitions, Regional Growth Partners"
+              },
+              {
+                quote: "As a broker, I can now package comprehensive risk analysis for buyers same-day. It's a game-changer for deal velocity.",
+                author: "Mike Rodriguez", 
+                title: "Principal, Mountain West Business Brokers"
+              },
+              {
+                quote: "The cyber and legal findings helped us avoid a costly acquisition with hidden compliance issues. ROI was immediate.",
+                author: "David Park",
+                title: "Senior Credit Officer, Community Bank SBA Division"
+              }
+            ].map((testimonial) => (
+              <Card key={testimonial.author} className="shadow-sm">
+                <CardHeader>
+                  <Quote className="h-8 w-8 text-cyan-500 mb-4" />
+                  <CardDescription className="text-base italic">
+                    "{testimonial.quote}"
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="border-t pt-4">
+                    <p className="font-semibold">{testimonial.author}</p>
+                    <p className="text-sm text-slate-600">{testimonial.title}</p>
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -449,20 +701,20 @@ export default function Page() {
           <h2 className="text-3xl font-semibold text-center">FAQ</h2>
           {[
             {
-              q: "How long does a brief take to generate?",
-              a: "Around 30 seconds!",
+              q: "How long does a Deal Brief take?",
+              a: "Typically 2–3 hours; max 6 hours for edge cases.",
             },
             {
-              q: "What data sources are used?",
-              a: "Real-time web search, corporate filings, reputable news, podcasts, social-media posts, and public databases from the last 24 months.",
+              q: "What sources are used?",
+              a: "Live web, corporate registries, court systems, breach repos, regulatory portals, news, podcasts, social media.",
             },
             {
-              q: "Is my input stored or shared?",
+              q: "Does it replace financial diligence?",
+              a: "No. It complements your financial review by exposing non-financial risk.",
+            },
+            {
+              q: "Is my data private?",
               a: "No. Inputs and generated briefs can be deleted at your direction and never sold or shared with third parties.",
-            },
-            {
-              q: "Do you guarantee zero hallucinations?",
-              a: "Each claim is footnoted with a source so you can verify yourself. While LLMs can err, transparent citations keep errors detectable.",
             },
           ].map((f) => (
             <div key={f.q} className="border-b border-slate-200 pb-4">
@@ -470,6 +722,18 @@ export default function Page() {
               <p className="text-slate-600 mt-2">{f.a}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* FINAL CTA BAND ----------------------------------------------------- */}
+      <section className="py-16 bg-gradient-to-r from-cyan-500 to-blue-600">
+        <div className="max-w-4xl mx-auto px-4 text-center space-y-6">
+          <h2 className="text-3xl font-bold text-white">
+            Ready to see every hidden risk?
+          </h2>
+          <Button size="lg" className="bg-white text-slate-800 hover:bg-slate-100 text-lg px-8 py-3">
+            Generate Deal Brief
+          </Button>
         </div>
       </section>
 
