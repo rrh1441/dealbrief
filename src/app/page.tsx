@@ -537,7 +537,7 @@ export default function Page() {
       <section id="features" className="py-24 bg-slate-50">
         <div className="max-w-6xl mx-auto px-4 space-y-12">
           <h2 className="text-3xl font-semibold text-center">
-            Built for professionals who can't wait
+            Built for professionals who can&apos;t wait
           </h2>
           <div className="grid gap-8 md:grid-cols-3">
             {[
@@ -680,7 +680,7 @@ export default function Page() {
                 <CardHeader>
                   <Quote className="h-8 w-8 text-cyan-500 mb-4" />
                   <CardDescription className="text-base italic">
-                    "{testimonial.quote}"
+                    &ldquo;{testimonial.quote}&rdquo;
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
